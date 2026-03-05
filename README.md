@@ -1,4 +1,4 @@
-# Pont-Rouge Game
+# Le Jeu du Train
 
 A multi-user, interactive game built with React, Express, and SQLite.
 
@@ -30,7 +30,13 @@ A multi-user, interactive game built with React, Express, and SQLite.
     ```
 3.  **Open the app**: Visit `http://localhost:3000`.
 
-### Deployment
+### Versioning & Sync Status
+The app includes a versioning system to help you track updates between AI Studio and Production.
+- **Version Number:** Located in `src/version.ts`.
+- **Sync Status:** Displayed in the Admin Panel to confirm connection to GitHub.
+- **Update Process:** When you push changes from AI Studio, update the `APP_VERSION` and `LAST_SYNC` in `src/version.ts` to keep track of your releases.
+
+## Deployment
 
 For detailed deployment instructions, see [DEPLOY.md](./DEPLOY.md).
 

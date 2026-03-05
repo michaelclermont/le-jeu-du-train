@@ -4,6 +4,7 @@ import { AuthService } from '../services/AuthService';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToastStore } from '../store/useToastStore';
 import { Button } from '../components/Button';
+import { APP_VERSION } from '../version';
 import { Train, Terminal } from 'lucide-react';
 
 export function LoginScreen() {
@@ -72,6 +73,12 @@ export function LoginScreen() {
             Créer un compte
           </Link>
         </p>
+      </div>
+
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 text-[10px] text-white/20 font-mono uppercase tracking-widest">
+        <span>Le Jeu du Train</span>
+        <span className="w-1 h-1 rounded-full bg-white/10" />
+        <span>v{APP_VERSION}</span>
       </div>
 
       {/* Secret Console Access */}

@@ -1,5 +1,5 @@
 {
-  "name": "JeuduTrain",
+  "name": "LeJeuDuTrain",
   "description": "A gamified travel tracker where users earn points by lifting their legs at railroad crossings.",
   "requestFramePermissions": [
     "geolocation"

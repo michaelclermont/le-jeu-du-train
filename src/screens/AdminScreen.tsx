@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, Trash2, ShieldAlert, AlertTriangle, MessageSquare, CheckCircle2, XCircle, Clock, Loader2, Send, MessageCircle, Terminal, UserPlus, Zap, Trophy, Database, Users, Settings as SettingsIcon, Save, Megaphone, BarChart3, Shield, Download, Upload, Edit, Ban } from 'lucide-react';
+import { APP_VERSION, LAST_SYNC } from '../version';
+import { ArrowLeft, Trash2, ShieldAlert, AlertTriangle, MessageSquare, CheckCircle2, XCircle, Clock, Loader2, Send, MessageCircle, Terminal, UserPlus, Zap, Trophy, Database, Users, Settings as SettingsIcon, Save, Megaphone, BarChart3, Shield, Download, Upload, Edit, Ban, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, type SystemSetting } from '../db/database';
 import { useAuthStore } from '../store/useAuthStore';
@@ -167,7 +168,7 @@ export function AdminScreen() {
         const data = JSON.parse(event.target?.result as string);
         if (!data.users || !data.trips) throw new Error('Format invalide');
 
-        await db.transaction('rw', db.users, db.trips, db.achievements, db.feedback, db.friendRequests, db.settings, async () => {
+        await db.transaction('rw', [db.users, db.trips, db.achievements, db.feedback, db.friendRequests, db.settings], async () => {
           await db.users.clear();
           await db.trips.clear();
           await db.achievements.clear();
@@ -427,7 +428,7 @@ export function AdminScreen() {
 
   const handleNukeDb = async () => {
     try {
-      await db.transaction('rw', db.users, db.trips, db.achievements, db.feedback, db.friendRequests, async () => {
+      await db.transaction('rw', [db.users, db.trips, db.achievements, db.feedback, db.friendRequests], async () => {
         await db.users.clear();
         await db.trips.clear();
         await db.achievements.clear();
@@ -455,9 +456,37 @@ export function AdminScreen() {
         </button>
         <div>
           <h1 className="text-xl font-display text-white">Administration</h1>
-          <p className="text-xs text-failure uppercase tracking-wider font-bold">Zone Dangereuse</p>
+          <div className="flex items-center gap-3 mt-0.5">
+            <p className="text-[10px] text-failure uppercase tracking-widest font-black bg-failure/10 px-1.5 py-0.5 rounded border border-failure/20">Zone Dangereuse</p>
+            <div className="flex items-center gap-1.5 text-[10px] text-white/30 font-mono uppercase tracking-wider">
+              <span className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
+              v{APP_VERSION}
+            </div>
+          </div>
         </div>
       </header>
+
+      {/* Sync Status Banner */}
+      <div className="mb-6 bg-surface border border-white/5 rounded-2xl p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+            <RefreshCw className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white">État de Synchronisation</p>
+            <p className="text-[10px] text-white/40">Dernière mise à jour : {new Date(LAST_SYNC).toLocaleString('fr-FR')}</p>
+          </div>
+        </div>
+        <a 
+          href="https://github.com/DalexViau/le-jeu-du-train" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full hover:bg-green-500/20 transition-colors cursor-pointer"
+        >
+          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+          <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">GitHub : Main</span>
+        </a>
+      </div>
 
       {/* Tabs */}
       <div className="grid grid-cols-3 gap-2 mb-6 bg-surface border border-white/5 p-2 rounded-2xl">
