@@ -1,6 +1,23 @@
 import type { User } from '../types/models';
 
 export class AuthService {
+  static getToken(): string | null {
+    return localStorage.getItem('auth_token');
+  }
+
+  static setToken(token: string) {
+    localStorage.setItem('auth_token', token);
+  }
+
+  static clearToken() {
+    localStorage.removeItem('auth_token');
+  }
+
+  static getAuthHeaders(): HeadersInit {
+    const token = this.getToken();
+    return token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+  }
+
   /**
    * Register a new user
    */
@@ -16,7 +33,9 @@ export class AuthService {
       throw new Error(error.error || 'Erreur lors de l\'inscription');
     }
 
-    return response.json();
+    const data = await response.json();
+    if (data.token) this.setToken(data.token);
+    return data.user;
   }
 
   /**
@@ -34,7 +53,9 @@ export class AuthService {
       throw new Error(error.error || 'Erreur lors de la connexion');
     }
 
-    return response.json();
+    const data = await response.json();
+    if (data.token) this.setToken(data.token);
+    return data.user;
   }
 
   /**
@@ -72,8 +93,10 @@ export class AuthService {
   /**
    * Get all pending password reset requests (Admin only)
    */
-  static async getResetRequests(adminId: number): Promise<any[]> {
-    const response = await fetch(`/api/admin/reset-requests?adminId=${adminId}`);
+  static async getResetRequests(): Promise<any[]> {
+    const response = await fetch(`/api/admin/reset-requests`, {
+      headers: this.getAuthHeaders()
+    });
     if (!response.ok) {
       throw new Error('Erreur lors de la récupération des demandes');
     }
@@ -83,16 +106,44 @@ export class AuthService {
   /**
    * Resolve a password reset request (Admin only)
    */
-  static async resolveResetRequest(adminId: number, requestId: number, newPassword: string): Promise<void> {
+  static async resolveResetRequest(requestId: number, newPassword: string): Promise<void> {
     const response = await fetch('/api/admin/resolve-reset', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminId, requestId, newPassword }),
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ requestId, newPassword }),
     });
 
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || 'Erreur lors de la résolution');
     }
+  }
+
+  static async updateProfile(data: Partial<User>): Promise<User> {
+    const response = await fetch('/api/users/me', {
+      method: 'PUT',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Erreur lors de la mise à jour');
+    }
+
+    return response.json();
+  }
+
+  static async getMe(): Promise<User> {
+    const response = await fetch('/api/users/me', {
+      headers: this.getAuthHeaders()
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Erreur lors de la récupération du profil');
+    }
+
+    return response.json();
   }
 }

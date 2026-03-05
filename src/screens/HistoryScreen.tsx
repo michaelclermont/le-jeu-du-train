@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, History, CheckCircle2, XCircle, MapPin } from 'lucide-react';
 import { db } from '../db/database';
 import { useAuthStore } from '../store/useAuthStore';
+import { AuthService } from '../services/AuthService';
 import type { Trip } from '../types/models';
 import clsx from 'clsx';
 
@@ -15,7 +16,9 @@ export function HistoryScreen() {
     const loadHistory = async () => {
       if (!currentUser?.id) return;
       try {
-        const response = await fetch(`/api/history?userId=${currentUser.id}`);
+        const response = await fetch('/api/history', {
+          headers: AuthService.getAuthHeaders()
+        });
         if (response.ok) {
           const userTrips = await response.json();
           setTrips(userTrips);

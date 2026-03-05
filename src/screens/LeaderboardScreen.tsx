@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trophy, Medal, Users, Globe } from 'lucide-react';
 import { db } from '../db/database';
 import { useAuthStore } from '../store/useAuthStore';
+import { AuthService } from '../services/AuthService';
 import type { User } from '../types/models';
 import clsx from 'clsx';
 import { motion } from 'motion/react';
@@ -11,22 +12,40 @@ export function LeaderboardScreen() {
   const navigate = useNavigate();
   const currentUser = useAuthStore((state) => state.currentUser);
   const [users, setUsers] = useState<User[]>([]);
+  const [friends, setFriends] = useState<number[]>([]);
   const [filter, setFilter] = useState<'all' | 'friends'>('all');
 
   useEffect(() => {
-    const loadLeaderboard = async () => {
+    const loadData = async () => {
       try {
-        const response = await fetch('/api/leaderboard');
-        if (response.ok) {
-          const data = await response.json();
+        const [leaderboardRes, friendsRes] = await Promise.all([
+          fetch('/api/leaderboard', { headers: AuthService.getAuthHeaders() }),
+          fetch('/api/friends', { headers: AuthService.getAuthHeaders() })
+        ]);
+
+        if (leaderboardRes.ok) {
+          const data = await leaderboardRes.json();
           setUsers(data);
         }
+
+        if (friendsRes.ok) {
+          const data = await friendsRes.json();
+          const accepted = data.filter((req: any) => req.status === 'accepted');
+          const friendIds = accepted.map((req: any) => 
+            req.sender_id === currentUser?.id ? req.receiver_id : req.sender_id
+          );
+          setFriends(friendIds);
+        }
       } catch (error) {
-        console.error('Failed to load leaderboard', error);
+        console.error('Failed to load leaderboard data', error);
       }
     };
-    loadLeaderboard();
-  }, []);
+    loadData();
+  }, [currentUser?.id]);
+
+  const displayedUsers = filter === 'all' 
+    ? users 
+    : users.filter(u => friends.includes(u.id) || u.id === currentUser?.id);
 
   const getRankIcon = (index: number) => {
     switch (index) {
@@ -84,7 +103,7 @@ export function LeaderboardScreen() {
       </div>
 
       <div className="flex flex-col gap-3">
-        {users.map((user, index) => {
+        {displayedUsers.map((user, index) => {
           const isCurrentUser = user.id === currentUser?.id;
           
           return (
@@ -124,7 +143,7 @@ export function LeaderboardScreen() {
           );
         })}
 
-        {users.length === 0 && (
+        {displayedUsers.length === 0 && (
           <div className="text-center text-white/50 py-10">
             Aucun joueur enregistré.
           </div>

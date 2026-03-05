@@ -1,11 +1,12 @@
 import type { User } from '../types/models';
+import { AuthService } from './AuthService';
 
 export class GameService {
-  static async submitScore(userId: number, score: number, distanceKm: number, crossings: number): Promise<User> {
+  static async submitScore(score: number, distanceKm: number, crossings: number, isFailed: boolean = false): Promise<User> {
     const response = await fetch('/api/game/submit', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, score, distanceKm, crossings }),
+      headers: AuthService.getAuthHeaders(),
+      body: JSON.stringify({ score, distanceKm, crossings, isFailed }),
     });
 
     if (!response.ok) {

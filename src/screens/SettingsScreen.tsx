@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Shield, Home, Trash2, Save, Loader2, Eye, EyeOff, Map, History, BarChart3, UserPlus } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToastStore } from '../store/useToastStore';
-import { db } from '../db/database';
+import { AuthService } from '../services/AuthService';
 import { Button } from '../components/Button';
 import { AddressAutocomplete } from '../components/AddressAutocomplete';
 import { motion, AnimatePresence } from 'motion/react';
@@ -33,8 +33,7 @@ export function SettingsScreen() {
     setIsSaving(true);
 
     try {
-      const updatedUser = {
-        ...currentUser,
+      const updatedUser = await AuthService.updateProfile({
         displayName,
         homeLocation,
         preferences: {
@@ -46,14 +45,13 @@ export function SettingsScreen() {
           showTripHistory,
           showStats
         }
-      };
+      });
 
-      await db.users.update(currentUser.id, updatedUser);
       setCurrentUser(updatedUser);
       addToast({ title: 'Succès', message: 'Paramètres enregistrés.', type: 'success' });
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      addToast({ title: 'Erreur', message: 'Impossible de sauvegarder.', type: 'error' });
+      addToast({ title: 'Erreur', message: error.message || 'Impossible de sauvegarder.', type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -62,10 +60,14 @@ export function SettingsScreen() {
   const handleDeleteAccount = async () => {
     if (!currentUser.id) return;
     try {
-      await db.users.delete(currentUser.id);
-      await db.trips.where('userId').equals(currentUser.id).delete();
-      await db.achievements.where('userId').equals(currentUser.id).delete();
-      await db.feedback.where('userId').equals(currentUser.id).delete();
+      const response = await fetch(`/api/admin/users/${currentUser.id}`, {
+        method: 'DELETE',
+        headers: AuthService.getAuthHeaders()
+      });
+      
+      if (!response.ok) {
+        throw new Error('Erreur lors de la suppression');
+      }
       
       logout();
       navigate('/login');

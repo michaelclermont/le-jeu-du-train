@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, User as UserIcon, MapPin, Trophy, Calendar, UserPlus, Check, X, Shield, Clock } from 'lucide-react';
-import { db } from '../db/database';
+import { AuthService } from '../services/AuthService';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToastStore } from '../store/useToastStore';
 import type { User, Trip, FriendRequest } from '../types/models';
@@ -25,68 +25,44 @@ export function PublicProfileScreen() {
       const targetUserId = parseInt(userId);
 
       if (targetUserId === currentUser.id) {
-        setFriendStatus('self');
-        setUser(currentUser);
-        // Load own trips
-        const trips = await db.trips
-          .where('userId')
-          .equals(targetUserId)
-          .reverse()
-          .limit(5)
-          .toArray();
-        setRecentTrips(trips);
-        setIsLoading(false);
+        // Load own profile from API to get accurate recent trips
+        try {
+          const response = await fetch(`/api/users/${targetUserId}`, {
+            headers: AuthService.getAuthHeaders()
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setUser(data.user);
+            setFriendStatus('self');
+            setRecentTrips(data.recentTrips);
+          }
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setIsLoading(false);
+        }
         return;
       }
 
       try {
-        const userData = await db.users.get(targetUserId);
-        if (!userData) {
-          addToast({ title: 'Erreur', message: 'Utilisateur introuvable.', type: 'error' });
+        const response = await fetch(`/api/users/${targetUserId}`, {
+          headers: AuthService.getAuthHeaders()
+        });
+
+        if (!response.ok) {
+          if (response.status === 403) {
+             addToast({ title: 'Privé', message: 'Ce profil est privé.', type: 'info' });
+          } else {
+             addToast({ title: 'Erreur', message: 'Utilisateur introuvable.', type: 'error' });
+          }
           navigate('/leaderboard');
           return;
         }
-        setUser(userData);
 
-        // Check friendship status
-        const sentRequest = await db.friendRequests
-          .where({ senderId: currentUser.id, receiverId: targetUserId })
-          .first();
-        
-        const receivedRequest = await db.friendRequests
-          .where({ senderId: targetUserId, receiverId: currentUser.id })
-          .first();
-
-        if (sentRequest?.status === 'accepted' || receivedRequest?.status === 'accepted') {
-          setFriendStatus('friends');
-        } else if (sentRequest?.status === 'pending') {
-          setFriendStatus('pending_sent');
-        } else if (receivedRequest?.status === 'pending') {
-          setFriendStatus('pending_received');
-        } else {
-          setFriendStatus('none');
-        }
-
-        // Load trips if allowed
-        // Logic: 
-        // 1. If showTripHistory is explicitly false -> hide
-        // 2. If showTripHistory is true (default) -> show
-        // Note: In a real app, we might also check "friends only" visibility if we implemented that granularity.
-        // For now, it's a binary public/private toggle.
-        
-        const canViewTrips = userData.preferences?.showTripHistory !== false;
-
-        if (canViewTrips) {
-          const trips = await db.trips
-            .where('userId')
-            .equals(targetUserId)
-            .reverse()
-            .limit(5)
-            .toArray();
-          setRecentTrips(trips);
-        } else {
-          setRecentTrips([]);
-        }
+        const data = await response.json();
+        setUser(data.user);
+        setFriendStatus(data.friendStatus);
+        setRecentTrips(data.recentTrips);
 
       } catch (error) {
         console.error(error);
@@ -103,17 +79,22 @@ export function PublicProfileScreen() {
     if (!currentUser?.id || !user?.id) return;
     
     try {
-      await db.friendRequests.add({
-        senderId: currentUser.id,
-        receiverId: user.id,
-        status: 'pending',
-        createdAt: Date.now()
+      const response = await fetch('/api/friends/request', {
+        method: 'POST',
+        headers: AuthService.getAuthHeaders(),
+        body: JSON.stringify({ targetUserId: user.id })
       });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Impossible d\'envoyer la demande.');
+      }
+
       setFriendStatus('pending_sent');
       addToast({ title: 'Succès', message: 'Demande envoyée !', type: 'success' });
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      addToast({ title: 'Erreur', message: 'Impossible d\'envoyer la demande.', type: 'error' });
+      addToast({ title: 'Erreur', message: error.message, type: 'error' });
     }
   };
 
@@ -121,12 +102,23 @@ export function PublicProfileScreen() {
     if (!currentUser?.id || !user?.id) return;
     
     try {
-      const request = await db.friendRequests
-        .where({ senderId: user.id, receiverId: currentUser.id })
-        .first();
+      // We need the requestId to accept. The backend API requires requestId.
+      // But we only have targetUserId here. Let's fetch friends list to find the request ID.
+      const friendsRes = await fetch('/api/friends', { headers: AuthService.getAuthHeaders() });
+      if (!friendsRes.ok) throw new Error('Failed to fetch requests');
+      const requests = await friendsRes.json();
+      
+      const request = requests.find((r: any) => r.sender_id === user.id && r.receiver_id === currentUser.id && r.status === 'pending');
       
       if (request?.id) {
-        await db.friendRequests.update(request.id, { status: 'accepted' });
+        const acceptRes = await fetch('/api/friends/accept', {
+          method: 'POST',
+          headers: AuthService.getAuthHeaders(),
+          body: JSON.stringify({ requestId: request.id })
+        });
+        
+        if (!acceptRes.ok) throw new Error('Failed to accept');
+
         setFriendStatus('friends');
         addToast({ title: 'Succès', message: 'Vous êtes maintenant amis !', type: 'success' });
       }

@@ -64,7 +64,7 @@ export function AdminScreen() {
   const loadResetRequests = async () => {
     if (!currentUser?.id) return;
     try {
-      const requests = await AuthService.getResetRequests(currentUser.id);
+      const requests = await AuthService.getResetRequests();
       setResetRequests(requests);
     } catch (e) {
       console.error(e);
@@ -80,7 +80,7 @@ export function AdminScreen() {
     }
     
     try {
-      await AuthService.resolveResetRequest(currentUser.id, requestId, newPasswordForRequest);
+      await AuthService.resolveResetRequest(requestId, newPasswordForRequest);
       addToast({ title: 'Succès', message: 'Mot de passe réinitialisé', type: 'success' });
       setResolvingRequest(null);
       setNewPasswordForRequest('');
@@ -119,7 +119,29 @@ export function AdminScreen() {
     );
   }
 
-  const users = useLiveQuery(() => db.users.toArray());
+  const [users, setUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'users' || activeTab === 'analytics') {
+      loadUsers();
+    }
+  }, [activeTab]);
+
+  const loadUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      const response = await fetch('/api/admin/users', { headers: AuthService.getAuthHeaders() });
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
   const trips = useLiveQuery(() => db.trips.reverse().limit(100).toArray()); // Last 100 trips for moderation
   const allTrips = useLiveQuery(() => db.trips.toArray()); // All trips for analytics
   const feedback = useLiveQuery(() => db.feedback.reverse().sortBy('createdAt'));
@@ -147,15 +169,8 @@ export function AdminScreen() {
   })() : [];
 
   const handleUpdateUser = async () => {
-    if (!userToEdit || !userToEdit.id) return;
-    try {
-      await db.users.update(userToEdit.id, userToEdit);
-      addToast({ title: 'Succès', message: 'Utilisateur mis à jour', type: 'success' });
-      setUserToEdit(null);
-    } catch (e) {
-      console.error(e);
-      addToast({ title: 'Erreur', message: 'Échec mise à jour', type: 'error' });
-    }
+    // This requires a new endpoint to update other users, skipping for now or implementing if needed
+    addToast({ title: 'Info', message: 'Édition via API non implémentée', type: 'info' });
   };
 
   const handleDeleteTrip = async (id: number) => {
@@ -238,14 +253,14 @@ export function AdminScreen() {
     if (!userToDelete) return;
 
     try {
-      // Delete user
-      await db.users.delete(userToDelete.id);
-      // Delete associated trips and achievements
-      await db.trips.where('userId').equals(userToDelete.id).delete();
-      await db.achievements.where('userId').equals(userToDelete.id).delete();
-      await db.feedback.where('userId').equals(userToDelete.id).delete();
+      const response = await fetch(`/api/admin/users/${userToDelete.id}`, {
+        method: 'DELETE',
+        headers: AuthService.getAuthHeaders()
+      });
+      if (!response.ok) throw new Error('Failed to delete');
       
       addToast({ title: 'Succès', message: `L'utilisateur ${userToDelete.username} a été supprimé.`, type: 'success' });
+      loadUsers();
     } catch (error) {
       console.error(error);
       addToast({ title: 'Erreur', message: 'Impossible de supprimer l\'utilisateur.', type: 'error' });

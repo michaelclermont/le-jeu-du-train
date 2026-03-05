@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, UserPlus, Check, X, Users } from 'lucide-react';
-import { db } from '../db/database';
+import { AuthService } from '../services/AuthService';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToastStore } from '../store/useToastStore';
 import type { User, FriendRequest } from '../types/models';
@@ -13,8 +13,8 @@ export function FriendsScreen() {
   const currentUser = useAuthStore((state) => state.currentUser);
   const addToast = useToastStore((state) => state.addToast);
 
-  const [pendingRequests, setPendingRequests] = useState<(FriendRequest & { sender: User })[]>([]);
-  const [friends, setFriends] = useState<User[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [friends, setFriends] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -22,46 +22,42 @@ export function FriendsScreen() {
       if (!currentUser?.id) return;
 
       try {
-        // 1. Load Pending Requests (Received)
-        const requests = await db.friendRequests
-          .where('receiverId')
-          .equals(currentUser.id)
-          .filter(req => req.status === 'pending')
-          .toArray();
-
-        // Fetch sender details for each request
-        const requestsWithSenders = await Promise.all(
-          requests.map(async (req) => {
-            const sender = await db.users.get(req.senderId);
-            return { ...req, sender: sender! };
-          })
-        );
-        setPendingRequests(requestsWithSenders.filter(r => r.sender)); // Filter out if sender deleted
-
-        // 2. Load Friends (Accepted)
-        // Find requests where I am sender OR receiver AND status is accepted
-        const sentAccepted = await db.friendRequests
-          .where('senderId')
-          .equals(currentUser.id)
-          .filter(req => req.status === 'accepted')
-          .toArray();
+        const response = await fetch('/api/friends', {
+          headers: AuthService.getAuthHeaders()
+        });
         
-        const receivedAccepted = await db.friendRequests
-          .where('receiverId')
-          .equals(currentUser.id)
-          .filter(req => req.status === 'accepted')
-          .toArray();
+        if (!response.ok) throw new Error('Failed to load friends');
+        const data = await response.json();
 
-        const friendIds = [
-          ...sentAccepted.map(r => r.receiverId),
-          ...receivedAccepted.map(r => r.senderId)
-        ];
+        // Process data
+        const pending = data
+          .filter((req: any) => req.receiver_id === currentUser.id && req.status === 'pending')
+          .map((req: any) => ({
+            id: req.id,
+            sender: {
+              id: req.sender_id,
+              username: req.sender_username,
+              displayName: req.sender_display_name
+            }
+          }));
 
-        // Deduplicate IDs just in case
-        const uniqueFriendIds = Array.from(new Set(friendIds));
+        const accepted = data
+          .filter((req: any) => req.status === 'accepted')
+          .map((req: any) => {
+            const isSender = req.sender_id === currentUser.id;
+            return {
+              id: isSender ? req.receiver_id : req.sender_id,
+              username: isSender ? req.receiver_username : req.sender_username,
+              displayName: isSender ? req.receiver_display_name : req.sender_display_name,
+              points: 0 // We don't have points in this query, would need a separate fetch or join
+            };
+          });
 
-        const friendsList = await db.users.bulkGet(uniqueFriendIds);
-        setFriends(friendsList.filter((f): f is User => !!f));
+        // Deduplicate friends
+        const uniqueFriends = Array.from(new Map(accepted.map((item: any) => [item.id, item])).values());
+
+        setPendingRequests(pending);
+        setFriends(uniqueFriends as any);
 
       } catch (error) {
         console.error("Error loading friends:", error);
@@ -76,7 +72,13 @@ export function FriendsScreen() {
 
   const handleAccept = async (requestId: number) => {
     try {
-      await db.friendRequests.update(requestId, { status: 'accepted' });
+      const response = await fetch('/api/friends/accept', {
+        method: 'POST',
+        headers: AuthService.getAuthHeaders(),
+        body: JSON.stringify({ requestId })
+      });
+      
+      if (!response.ok) throw new Error('Failed to accept');
       
       // Move from pending to friends list locally
       const request = pendingRequests.find(r => r.id === requestId);
@@ -93,7 +95,14 @@ export function FriendsScreen() {
 
   const handleReject = async (requestId: number) => {
     try {
-      await db.friendRequests.update(requestId, { status: 'rejected' });
+      const response = await fetch('/api/friends/reject', {
+        method: 'POST',
+        headers: AuthService.getAuthHeaders(),
+        body: JSON.stringify({ requestId })
+      });
+      
+      if (!response.ok) throw new Error('Failed to reject');
+
       setPendingRequests(prev => prev.filter(r => r.id !== requestId));
       addToast({ title: 'Refusé', message: 'Demande supprimée.', type: 'info' });
     } catch (error) {

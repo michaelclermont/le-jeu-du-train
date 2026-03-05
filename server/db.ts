@@ -60,6 +60,17 @@ db.exec(`
     created_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS friend_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL,
+    receiver_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (sender_id) REFERENCES users(id),
+    FOREIGN KEY (receiver_id) REFERENCES users(id),
+    UNIQUE(sender_id, receiver_id)
+  );
 `);
 
 // Add recovery_phrase column to existing tables if it doesn't exist
@@ -75,6 +86,16 @@ try {
 }
 try {
   db.exec('ALTER TABLE users ADD COLUMN phone TEXT');
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec('ALTER TABLE users ADD COLUMN preferences TEXT');
+} catch (e) {
+  // Column already exists
+}
+try {
+  db.exec('ALTER TABLE users ADD COLUMN home_location TEXT');
 } catch (e) {
   // Column already exists
 }

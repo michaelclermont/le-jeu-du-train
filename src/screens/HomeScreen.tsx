@@ -64,7 +64,7 @@ export function HomeScreen() {
     
     try {
       const points = success ? (1 * globalMultiplier) : 0;
-      const updatedUser = await GameService.submitScore(currentUser.id, points, 0, 1);
+      const updatedUser = await GameService.submitScore(points, 0, 1);
       
       if (success) {
         triggerConfetti();
@@ -86,7 +86,7 @@ export function HomeScreen() {
     
     try {
       const points = success ? (freeCrossings * globalMultiplier) : 0;
-      const updatedUser = await GameService.submitScore(currentUser.id, points, 0, freeCrossings);
+      const updatedUser = await GameService.submitScore(points, 0, freeCrossings);
 
       if (success) {
         triggerConfetti();

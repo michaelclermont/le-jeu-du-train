@@ -5,11 +5,12 @@ import { ArrowLeft, MapPin, Navigation, AlertTriangle, Train, CheckCircle2, XCir
 import confetti from 'canvas-confetti';
 import { AddressAutocomplete } from '../components/AddressAutocomplete';
 import { Button } from '../components/Button';
-import { TripEngine, type ProcessedTrip } from '../services/TripEngine';
+import { GameService } from '../services/GameService';
+import { AchievementEngine } from '../services/AchievementEngine';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToastStore } from '../store/useToastStore';
 import { db } from '../db/database';
-import { AchievementEngine } from '../services/AchievementEngine';
+import { TripEngine, type ProcessedTrip } from '../services/TripEngine';
 import type { GeocodeResult } from '../api/geoServices';
 import clsx from 'clsx';
 
@@ -100,70 +101,52 @@ export function TripPlannerScreen() {
   const finishTrip = async (results: boolean[]) => {
     if (!currentUser?.id || !trip) return;
 
-    let updatedUser = { ...currentUser };
-    let pointsEarnedLifetime = 0;
     let tripFailed = false;
 
     // Calculate points based on results sequence
     results.forEach((success) => {
-      if (success) {
-        pointsEarnedLifetime += 1;
-        updatedUser.points += 1;
-        updatedUser.totalEarned += 1;
-        updatedUser.streak += 1;
-      } else {
-        // Missed a crossing: Reset streak and current points (but not totalEarned)
-        updatedUser.points = 0;
-        updatedUser.streak = 0;
-        updatedUser.hasLost = true;
+      if (!success) {
         tripFailed = true;
       }
     });
 
     const effectivePoints = calculateEffectivePoints(results);
 
-    updatedUser.tripCount += 1;
-    updatedUser.totalDistanceKm = (updatedUser.totalDistanceKm || 0) + trip.distanceKm;
-    
-    if (trip.distanceKm > updatedUser.longestTripKm) {
-      updatedUser.longestTripKm = trip.distanceKm;
-    }
-    if (trip.crossings.length > updatedUser.maxCrossingsInTrip) {
-      updatedUser.maxCrossingsInTrip = trip.crossings.length;
-    }
+    try {
+      const updatedUser = await GameService.submitScore(effectivePoints, trip.distanceKm, trip.crossings.length, tripFailed);
 
-    if (pointsEarnedLifetime > 0) {
-      triggerConfetti();
-      if (tripFailed) {
-        addToast({ title: `Trajet terminé. Tu repars avec ${effectivePoints} points.`, type: 'info' });
+      if (effectivePoints > 0) {
+        triggerConfetti();
+        if (tripFailed) {
+          addToast({ title: `Trajet terminé. Tu repars avec ${effectivePoints} points.`, type: 'info' });
+        } else {
+          addToast({ title: `Trajet parfait! +${effectivePoints} points 🎉`, type: 'success' });
+        }
+      } else if (trip.crossings.length > 0) {
+        addToast({ title: 'Aucun point gagné. Dommage!', type: 'error' });
       } else {
-        addToast({ title: `Trajet parfait! +${effectivePoints} points 🎉`, type: 'success' });
+        addToast({ title: 'Trajet terminé sans passage à niveau.', type: 'info' });
       }
-    } else if (trip.crossings.length > 0) {
-      addToast({ title: 'Aucun point gagné. Dommage!', type: 'error' });
-    } else {
-      addToast({ title: 'Trajet terminé sans passage à niveau.', type: 'info' });
+
+      // Save Trip to DB
+      await db.trips.add({
+        userId: currentUser.id,
+        routeName: trip.routeName,
+        distanceKm: trip.distanceKm,
+        crossingsCount: trip.crossings.length,
+        success: !tripFailed,
+        date: Date.now(),
+      });
+
+      setCurrentUser(updatedUser);
+      // Check Achievements
+      await AchievementEngine.check(updatedUser);
+
+      setIsFailed(tripFailed && effectivePoints === 0);
+      setStep('done');
+    } catch (error: any) {
+      addToast({ title: 'Erreur', message: error.message, type: 'error' });
     }
-
-    // Save Trip to DB
-    await db.trips.add({
-      userId: currentUser.id,
-      routeName: trip.routeName,
-      distanceKm: trip.distanceKm,
-      crossingsCount: trip.crossings.length,
-      success: !tripFailed,
-      date: Date.now(),
-    });
-
-    // Update User DB & State
-    await db.users.update(currentUser.id, updatedUser);
-    setCurrentUser(updatedUser);
-    
-    // Check Achievements
-    await AchievementEngine.check(updatedUser);
-
-    setIsFailed(tripFailed && effectivePoints === 0);
-    setStep('done');
   };
 
   return (
