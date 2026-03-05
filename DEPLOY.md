@@ -45,9 +45,16 @@ This guide explains how to deploy the application on a server.
 
 ## Persistent Data
 
-The application uses a SQLite database located at `server/game.db` (or similar, depending on configuration). 
-Ensure the `server` directory is writable by the application process.
-Back up this file to save user data and game history.
+The application uses a SQLite database. By default, it is stored at `./data/game.db` in the project root.
+
+### Isolating Production Data
+To prevent "contamination" between development and production data, you can specify a custom path for the database file using an environment variable in your `.env` file:
+
+```env
+DATABASE_PATH="/var/lib/my-app/prod-game.db"
+```
+
+This allows you to store the production database in a separate, persistent volume or a protected directory on your server. Ensure the directory containing the database file is writable by the application process.
 
 ## Troubleshooting
 

@@ -6,13 +6,15 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Database configuration
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '../data/game.db');
+const dataDir = path.dirname(dbPath);
+
 // Ensure data directory exists
-const dataDir = path.join(__dirname, '../data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const dbPath = path.join(dataDir, 'game.db');
 const db = new Database(dbPath);
 
 // Enable WAL mode for better concurrency
