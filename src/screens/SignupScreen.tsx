@@ -1,0 +1,91 @@
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { AuthService } from '../services/AuthService';
+import { useAuthStore } from '../store/useAuthStore';
+import { useToastStore } from '../store/useToastStore';
+import { Button } from '../components/Button';
+import { Train } from 'lucide-react';
+
+export function SignupScreen() {
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const navigate = useNavigate();
+  const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
+  const addToast = useToastStore((state) => state.addToast);
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !displayName || !password) return;
+
+    if (password.length < 8) {
+      addToast({ title: 'Erreur', message: 'Le mot de passe doit contenir au moins 8 caractères.', type: 'error' });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const user = await AuthService.signup(username, displayName, password);
+      setCurrentUser(user);
+      navigate('/');
+    } catch (error: any) {
+      addToast({ title: 'Erreur', message: error.message, type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-sm flex flex-col items-center">
+        <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(255,193,7,0.2)]">
+          <Train className="w-10 h-10 text-primary" />
+        </div>
+        
+        <h1 className="font-display text-3xl text-center mb-2">Inscription</h1>
+        <p className="text-white/50 text-center mb-10">Rejoins la partie.</p>
+
+        <form onSubmit={handleSignup} className="w-full flex flex-col gap-4">
+          <input
+            type="text"
+            placeholder="Nom d'utilisateur"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full bg-surface border border-white/10 rounded-2xl px-5 py-4 text-white placeholder:text-white/30 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+          />
+          <input
+            type="text"
+            placeholder="Nom d'affichage (ex: Jean)"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="w-full bg-surface border border-white/10 rounded-2xl px-5 py-4 text-white placeholder:text-white/30 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+          />
+          <input
+            type="password"
+            placeholder="Mot de passe"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full bg-surface border border-white/10 rounded-2xl px-5 py-4 text-white placeholder:text-white/30 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+          />
+          
+          <Button 
+            type="submit" 
+            disabled={!username || !displayName || !password || isLoading}
+            className="mt-4"
+          >
+            {isLoading ? 'Création...' : 'Créer mon compte'}
+          </Button>
+        </form>
+
+        <p className="mt-8 text-white/50 text-sm">
+          Déjà un compte?{' '}
+          <Link to="/login" className="text-primary hover:underline font-bold">
+            Se connecter
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}

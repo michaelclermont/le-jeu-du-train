@@ -1,0 +1,82 @@
+export interface GeocodeResult {
+  place_id: number;
+  lat: string;
+  lon: string;
+  display_name: string;
+}
+
+export interface UserPreferences {
+  isPublicProfile: boolean;
+  showTripsOnLeaderboard: boolean;
+  allowFriendRequests: boolean;
+  showFullTripDetails?: boolean; // Show start/end addresses to others
+  showTripHistory?: boolean; // Show list of past trips to others
+  showStats?: boolean; // Show statistics (total km, points, etc.) to others
+}
+
+export interface User {
+  id?: number;
+  username: string;
+  displayName: string;
+  passwordHash?: string;
+  points: number;
+  totalEarned: number;
+  tripCount: number;
+  streak: number;
+  hasLost: boolean;
+  longestTripKm: number;
+  totalDistanceKm: number;
+  maxCrossingsInTrip: number;
+  createdAt: number;
+  isAdmin?: boolean;
+  homeLocation?: GeocodeResult;
+  preferences?: UserPreferences;
+}
+
+export interface Trip {
+  id?: number;
+  userId: number;
+  routeName: string;
+  distanceKm: number;
+  crossingsCount: number;
+  success: boolean;
+  date: number;
+}
+
+export interface Achievement {
+  id?: number;
+  userId: number;
+  achievementId: string;
+  unlockedAt: number;
+}
+
+export type FeedbackType = 'bug' | 'feedback';
+export type FeedbackStatus = 'pending' | 'in_progress' | 'resolved' | 'rejected';
+
+export interface FeedbackReply {
+  senderId: number;
+  isAdmin: boolean;
+  message: string;
+  createdAt: number;
+}
+
+export interface Feedback {
+  id?: number;
+  userId: number;
+  type: FeedbackType;
+  message: string;
+  status: FeedbackStatus;
+  createdAt: number;
+  updatedAt: number;
+  replies?: FeedbackReply[];
+}
+
+export type FriendRequestStatus = 'pending' | 'accepted' | 'rejected';
+
+export interface FriendRequest {
+  id?: number;
+  senderId: number;
+  receiverId: number;
+  status: FriendRequestStatus;
+  createdAt: number;
+}

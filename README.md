@@ -1,0 +1,39 @@
+# Pont-Rouge Game
+
+A multi-user, interactive game built with React, Express, and SQLite.
+
+## Features
+
+- **Multi-user Support**: Create an account and compete with others.
+- **Leaderboards**: See who has the highest score in real-time.
+- **Game History**: Track your past trips and performance.
+- **Achievements**: Unlock medals as you play.
+- **Admin Dashboard**: Manage announcements and global multipliers.
+
+## Tech Stack
+
+- **Frontend**: React, Tailwind CSS, Lucide Icons, Motion.
+- **Backend**: Node.js, Express, Better-SQLite3.
+- **Database**: SQLite (Local persistence).
+
+## Getting Started
+
+### Local Development
+
+1.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+2.  **Start the development server**:
+    ```bash
+    npm run dev
+    ```
+3.  **Open the app**: Visit `http://localhost:3000`.
+
+### Deployment
+
+For detailed deployment instructions, see [DEPLOY.md](./DEPLOY.md).
+
+## License
+
+MIT

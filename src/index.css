@@ -1,0 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Nunito:wght@400;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Dela Gothic One", system-ui, sans-serif;
+  --font-sans: "Nunito", system-ui, sans-serif;
+  
+  --color-background-dark: #08080E;
+  --color-background-light: #0D0D18;
+  --color-surface: rgba(255, 255, 255, 0.035);
+  --color-primary: #FFC107;
+  --color-success: #4CAF50;
+  --color-failure: #E53935;
+}
+
+body {
+  @apply bg-background-dark text-white font-sans antialiased selection:bg-primary/30;
+  background-image: radial-gradient(circle at top, var(--color-background-light), var(--color-background-dark));
+  min-height: 100vh;
+  overflow-x: hidden;
+}
