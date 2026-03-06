@@ -1,6 +1,8 @@
 # Le Jeu du Train
 
-A multi-user, interactive game built with React, Express, and SQLite.
+Le jeu du train est un jeu sans pitié où le plaisir débute au croisement de la route et de rails de train.
+
+Chaque croisement réussi te donne un point mais un échec te fera perdre l'investissement d'une vie.
 
 ## Features
 
