@@ -1,12 +1,7 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
-import crypto from 'crypto';
 import { db } from './server/db.js';
 
 import authRouter from './server/routes/auth.js';
@@ -15,8 +10,6 @@ import { requireAuth, requireAdmin, authLimiter, gameSubmitLimiter } from './ser
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-le-jeu-du-train-12345';
 
 // Helper: Safely parse JSON or return undefined
 const safeJsonParse = (str: string | null) => {
@@ -39,121 +32,16 @@ async function startServer() {
 
   app.use(express.json({ limit: '10kb' }));
 
-  // Routers
+  // ========================
+  // API Routes (must be BEFORE static)
+  // ========================
   app.use('/api/auth', authRouter);
   app.use('/api/game', gameRouter);
 
-  // ========================
-  // Authentication Endpoints
-  // ========================
-
-  app.post('/api/auth/signup', authLimiter, async (req, res) => {
-    const { username, displayName, password, recoveryPhrase, email, phone } = req.body;
-
-    // Basic validation
-    if (!username || !displayName || !password) return res.status(400).json({ error: 'Champs requis manquants.' });
-    if (username.length > 50 || displayName.length > 50) return res.status(400).json({ error: 'Nom trop long.' });
-    if (password.length < 8 || password.length > 128) return res.status(400).json({ error: 'Mot de passe invalide.' });
-
-    try {
-      const existing = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-      if (existing) return res.status(400).json({ error: "Nom d'utilisateur déjà pris." });
-
-      const salt = bcrypt.genSaltSync(10);
-      const passwordHash = bcrypt.hashSync(password, salt);
-
-      const recoveryHash = recoveryPhrase ? bcrypt.hashSync(recoveryPhrase.toLowerCase().trim(), salt) : null;
-      const emailHash = email ? bcrypt.hashSync(email.toLowerCase().trim(), salt) : null;
-      const phoneHash = phone ? bcrypt.hashSync(phone.replace(/\s+/g, ''), salt) : null;
-
-      // First user is admin
-      const count = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-      const isAdmin = count.count === 0 ? 1 : 0;
-
-      const stmt = db.prepare(`
-        INSERT INTO users (username, display_name, password_hash, created_at, is_admin, recovery_phrase, email, phone)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      const info = stmt.run(username, displayName, passwordHash, Date.now(), isAdmin, recoveryHash, emailHash, phoneHash);
-      const newUser = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid) as any;
-
-      const token = jwt.sign({ id: newUser.id, isAdmin: newUser.is_admin === 1 }, JWT_SECRET, { expiresIn: '24h' });
-
-      res.json({
-        token,
-        user: {
-          id: newUser.id,
-          username: newUser.username,
-          displayName: newUser.display_name,
-          points: newUser.points,
-          totalEarned: newUser.total_earned,
-          tripCount: newUser.trip_count,
-          streak: newUser.streak,
-          longestTripKm: newUser.longest_trip_km,
-          totalDistanceKm: newUser.total_distance_km,
-          maxCrossingsInTrip: newUser.max_crossings_in_trip,
-          highestScore: newUser.highest_score,
-          createdAt: newUser.created_at,
-          isAdmin: newUser.is_admin === 1,
-          preferences: safeJsonParse(newUser.preferences),
-          homeLocation: safeJsonParse(newUser.home_location),
-          achievements: []
-        }
-      });
-    } catch (err: any) {
-      console.error('Signup error:', err.message);
-      res.status(500).json({ error: 'Erreur lors de l\'inscription.' });
-    }
-  });
-
-  app.post('/api/auth/login', authLimiter, async (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ error: 'Nom d\'utilisateur et mot de passe requis.' });
-
-    await new Promise(r => setTimeout(r, 500)); // Artificial delay
-
-    try {
-      const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
-      if (!user || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'Identifiants invalides.' });
-
-      const token = jwt.sign({ id: user.id, isAdmin: user.is_admin === 1 }, JWT_SECRET, { expiresIn: '24h' });
-      const unlockedAchievements = db.prepare('SELECT achievement_id FROM user_achievements WHERE user_id = ?').all(user.id).map(a => a.achievement_id);
-
-      res.json({
-        token,
-        user: {
-          id: user.id,
-          username: user.username,
-          displayName: user.display_name,
-          points: user.points,
-          totalEarned: user.total_earned,
-          tripCount: user.trip_count,
-          streak: user.streak,
-          longestTripKm: user.longest_trip_km,
-          totalDistanceKm: user.total_distance_km,
-          maxCrossingsInTrip: user.max_crossings_in_trip,
-          highestScore: user.highest_score,
-          createdAt: user.created_at,
-          isAdmin: user.is_admin === 1,
-          preferences: safeJsonParse(user.preferences),
-          homeLocation: safeJsonParse(user.home_location),
-          achievements: unlockedAchievements
-        }
-      });
-    } catch (err: any) {
-      console.error('Login error:', err.message);
-      res.status(500).json({ error: 'Erreur lors de la connexion.' });
-    }
-  });
-
-  // ========================
-  // Game Submission
-  // ========================
   app.post('/api/game/submit', requireAuth, gameSubmitLimiter, (req: any, res: any) => {
     const { score, distanceKm, crossings, isFailed, tripCount = 1 } = req.body;
     const userId = req.user.id;
 
-    // Input validation
     if (!Number.isInteger(score) || score < 0 || score > 50000) return res.status(400).json({ error: 'Score invalide' });
     if (typeof distanceKm !== 'number' || distanceKm < 0 || distanceKm > 10000) return res.status(400).json({ error: 'Distance invalide' });
     if (!Number.isInteger(crossings) || crossings < 0 || crossings > 1000) return res.status(400).json({ error: 'Nombre de passages invalide' });
@@ -199,7 +87,7 @@ async function startServer() {
       `).run(userId, calculatedScore, distanceKm, crossings, now);
 
       const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
-      const unlockedAchievements = db.prepare('SELECT achievement_id FROM user_achievements WHERE user_id = ?').all(userId).map(a => a.achievement_id);
+      const unlockedAchievements = db.prepare('SELECT achievement_id FROM user_achievements WHERE user_id = ?').all(userId).map((a: any) => a.achievement_id);
 
       res.json({
         id: updatedUser.id,
@@ -224,15 +112,12 @@ async function startServer() {
     }
   });
 
-  // ========================
-  // User Profile Endpoints
-  // ========================
   app.get('/api/users/me', requireAuth, (req: any, res: any) => {
     try {
       const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id) as any;
       if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' });
 
-      const achievementIds = db.prepare('SELECT achievement_id FROM user_achievements WHERE user_id = ?').all(user.id).map(a => a.achievement_id);
+      const achievementIds = db.prepare('SELECT achievement_id FROM user_achievements WHERE user_id = ?').all(user.id).map((a: any) => a.achievement_id);
 
       res.json({
         id: user.id,
@@ -256,6 +141,15 @@ async function startServer() {
       console.error('Get me error:', err.message);
       res.status(500).json({ error: 'Erreur serveur' });
     }
+  });
+
+  // ========================
+  // Static + SPA Fallback (must be AFTER all API routes)
+  // ========================
+  app.use(express.static(path.join(__dirname, 'dist')));
+
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
   });
 
   // ========================
