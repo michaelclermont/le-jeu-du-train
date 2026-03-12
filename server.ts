@@ -1256,6 +1256,19 @@ async function startServer() {
     });
   }
 
+//2026-03-12
+  // Serve Vite-built PWA static files
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// For all non-API routes, serve index.html (SPA + PWA routing)
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    // Let API routes 404 normally
+    return next();
+  }
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+  
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
