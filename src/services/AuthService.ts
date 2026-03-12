@@ -44,11 +44,24 @@ export class AuthService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Erreur lors de l\'inscription');
+      let errorMessage = `Erreur ${response.status}`;
+      try {
+        const error = await response.json();
+        errorMessage = error.error || errorMessage;
+      } catch (e) {
+        console.error('Failed to parse error JSON', e);
+      }
+      throw new Error(errorMessage);
     }
 
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      throw new Error('Réponse serveur invalide');
+    }
+    
     if (data.token) this.setToken(data.token);
     if (data.user) {
       await AchievementEngine.syncFromServer(data.user);
@@ -72,7 +85,14 @@ export class AuthService {
       throw new Error(error.error || 'Erreur lors de la connexion');
     }
 
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      throw new Error('Réponse serveur invalide');
+    }
+    
     if (data.token) this.setToken(data.token);
     if (data.user) {
       await AchievementEngine.syncFromServer(data.user);
@@ -150,11 +170,24 @@ export class AuthService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Erreur lors de la mise à jour');
+      let errorMessage = `Erreur ${response.status}`;
+      try {
+        const error = await response.json();
+        errorMessage = error.error || errorMessage;
+      } catch (e) {
+        console.error('Failed to parse error JSON', e);
+      }
+      throw new Error(errorMessage);
     }
 
-    const user = await response.json();
+    const text = await response.text();
+    let user;
+    try {
+      user = text ? JSON.parse(text) : {};
+    } catch (e) {
+      throw new Error('Réponse serveur invalide');
+    }
+    
     await AchievementEngine.syncFromServer(user);
     await this.syncTripsFromServer();
     return user;
