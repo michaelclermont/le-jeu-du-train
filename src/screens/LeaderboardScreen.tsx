@@ -30,25 +30,79 @@ export function LeaderboardScreen() {
         }
 
         if (leaderboardRes.ok) {
-          const data = await leaderboardRes.json();
-          setUsers(data.map((u: any) => ({
-            ...u,
-            displayName: u.display_name,
-            totalEarned: u.total_earned,
-            tripCount: u.trip_count,
-            longestTripKm: u.longest_trip_km,
-            totalDistanceKm: u.total_distance_km,
-            highestScore: u.highest_score
-          })));
+          let normalized: User[] = [];
+
+          try {
+            const contentType = leaderboardRes.headers.get('content-type') || '';
+
+            if (contentType.includes('application/json')) {
+              const data = await leaderboardRes.json();
+
+              normalized = data.map((u: any) => ({
+                ...u,
+                displayName: u.display_name ?? u.displayName,
+                totalEarned: u.total_earned ?? u.totalEarned,
+                tripCount: u.trip_count ?? u.tripCount,
+                longestTripKm: u.longest_trip_km ?? u.longestTripKm,
+                totalDistanceKm: u.total_distance_km ?? u.totalDistanceKm,
+                highestScore: u.highest_score ?? u.highestScore,
+              }));
+            } else {
+              // Non-JSON response (likely HTML fallback in dev/PWA) – log quietly
+              const text = await leaderboardRes.text();
+              console.warn('Leaderboard returned non-JSON response; using fallback data.', {
+                status: leaderboardRes.status,
+                contentType,
+                bodyPreview: text.slice(0, 200),
+              });
+            }
+          } catch (err) {
+            console.warn('Failed to parse leaderboard response as JSON; using fallback data.', err);
+          }
+
+          // Ensure the current user is always present in the leaderboard,
+          // even if the API failed or returned nothing.
+          if (currentUser?.id != null) {
+            const alreadyIncluded = normalized.some(u => u.id === currentUser.id);
+            if (!alreadyIncluded) {
+              normalized.push(currentUser);
+            }
+          }
+
+          // If we still have no users but we are logged in, at least show "me".
+          if (normalized.length === 0 && currentUser) {
+            normalized = [currentUser];
+          }
+
+          // Keep ordering by points so your rank is meaningful
+          normalized.sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
+
+          setUsers(normalized);
         }
 
         if (friendsRes.ok) {
-          const data = await friendsRes.json();
-          const accepted = data.filter((req: any) => req.status === 'accepted');
-          const friendIds = accepted.map((req: any) => 
-            req.sender_id === currentUser?.id ? req.receiver_id : req.sender_id
-          );
-          setFriends(friendIds);
+          try {
+            const contentType = friendsRes.headers.get('content-type') || '';
+
+            if (contentType.includes('application/json')) {
+              const data = await friendsRes.json();
+              const accepted = data.filter((req: any) => req.status === 'accepted');
+              const friendIds = accepted.map((req: any) => 
+                req.sender_id === currentUser?.id ? req.receiver_id : req.sender_id
+              );
+              setFriends(friendIds);
+            } else {
+              // In dev/offline modes the friends endpoint might serve HTML; just skip quietly.
+              const text = await friendsRes.text();
+              console.warn('Friends endpoint returned non-JSON response; skipping friends filter.', {
+                status: friendsRes.status,
+                contentType,
+                bodyPreview: text.slice(0, 200),
+              });
+            }
+          } catch (err) {
+            console.warn('Failed to parse friends response as JSON; skipping friends filter.', err);
+          }
         }
       } catch (error) {
         console.error('Failed to load leaderboard data', error);
@@ -131,7 +185,7 @@ export function LeaderboardScreen() {
               className={clsx(
                 "flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer hover:bg-white/5",
                 isCurrentUser 
-                  ? "bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(255,193,7,0.1)]" 
+                  ? "bg-primary/15 border-primary/60 shadow-[0_0_25px_rgba(255,193,7,0.45)] ring-2 ring-primary/50"
                   : "bg-surface border-white/5"
               )}
             >
