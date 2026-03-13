@@ -37,6 +37,12 @@ async function startServer() {
   // API Routes (must be BEFORE static)
   // ========================
   app.use('/api/auth', authRouter);
+
+  // Log to verify game router is actually hit
+  app.use('/api/game', (req, res, next) => {
+    console.log('Game router hit:', req.method, req.url);
+    next();
+  });
   app.use('/api/game', gameRouter);
   // Testing log to verify users router is hit
   app.use('/api/users', (req, res, next) => {
@@ -155,7 +161,11 @@ async function startServer() {
   // ========================
   app.use(express.static(path.join(__dirname, 'dist')));
 
-  app.get('/{*meow}', (req, res) => {
+  // SPA fallback: serve index.html for non-API GET routes only.
+  // Do NOT intercept /api/* so those endpoints always return JSON.
+  app.use((req, res, next) => {
+    if (req.method !== 'GET') return next();
+    if (req.path.startsWith('/api/')) return next();
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
   });
 

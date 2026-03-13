@@ -62,8 +62,11 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
       }
       
       setIsLoading(true);
-      const targetUserId = isMe ? currentUser.id : (userId ? parseInt(userId) : null);
-      if (!targetUserId || isNaN(targetUserId)) {
+      const targetUserId = isMe ? currentUser.id : (userId ? Number(userId) : null);
+      // Only treat as invalid when viewing another user's profile with a bad or missing id.
+      // For the "me" profile, we rely on the auth store instead so we don't incorrectly
+      // redirect while the current user is still being initialized.
+      if (!isMe && (!userId || Number.isNaN(targetUserId))) {
         setIsLoading(false);
         addToast({ title: 'Erreur', message: 'Utilisateur invalide.', type: 'error' });
         navigate('/leaderboard');

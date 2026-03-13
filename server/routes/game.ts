@@ -129,14 +129,29 @@ router.get('/history', requireAuth, (req: any, res: any) => {
 // Leaderboard route
 router.get('/leaderboard', requireAuth, (req: any, res: any) => {
   try {
-    const users = db.prepare(`
+    const baseUsers = db.prepare(`
       SELECT id, username, display_name, points, total_earned, trip_count, 
              streak, longest_trip_km, total_distance_km, highest_score
       FROM users
-      WHERE is_admin = 0
       ORDER BY points DESC
       LIMIT 100
-    `).all();
+    `).all() as any[];
+
+    const currentUserId = req.user.id;
+
+    // Fetch current user with the same projection, regardless of admin status
+    const currentUser = db.prepare(`
+      SELECT id, username, display_name, points, total_earned, trip_count, 
+             streak, longest_trip_km, total_distance_km, highest_score
+      FROM users
+      WHERE id = ?
+    `).get(currentUserId) as any | undefined;
+
+    const users = [...baseUsers];
+
+    if (currentUser && !users.some(u => u.id === currentUser.id)) {
+      users.push(currentUser);
+    }
 
     res.json(users);
   } catch (error: any) {
