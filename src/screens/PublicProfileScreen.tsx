@@ -25,6 +25,7 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
   const [activeTab, setActiveTab] = useState<'stats' | 'history' | 'achievements'>('stats');
   const [selectedAchievement, setSelectedAchievement] = useState<typeof ACHIEVEMENTS[0] | null>(null);
   const [showNukeConfirm, setShowNukeConfirm] = useState(false);
+  const [achievementRarity, setAchievementRarity] = useState<{ totalUsers: number; byAchievement: Record<string, number> } | null>(null);
 
   const getRarityColor = (rarity: string) => {
     switch (rarity) {
@@ -133,6 +134,23 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
 
     loadProfile();
   }, [userId, isMe, currentUser?.id, isAuthLoading]);
+
+  // Fetch server-side achievement rarity (% of users who have each achievement)
+  useEffect(() => {
+    if (!user) {
+      setAchievementRarity(null);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/users/achievement-rarity', { headers: AuthService.getAuthHeaders() })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!cancelled && data && typeof data.totalUsers === 'number' && data.byAchievement)
+          setAchievementRarity({ totalUsers: data.totalUsers, byAchievement: data.byAchievement });
+      })
+      .catch(() => { if (!cancelled) setAchievementRarity(null); });
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   const handleSendRequest = async () => {
     if (!currentUser?.id || !user?.id) return;
@@ -485,33 +503,36 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
                {ACHIEVEMENTS.map((ach) => {
                 const isUnlocked = achievements.has(ach.id);
                 const isSecret = ach.rarity === 'Secret';
-                
+                const pct = achievementRarity && achievementRarity.totalUsers > 0
+                  ? Math.round(((achievementRarity.byAchievement[ach.id] ?? 0) / achievementRarity.totalUsers) * 100)
+                  : null;
                 // Split by space, assuming the last part is the emoji/icon
                 const parts = ach.title.split(' ');
                 const icon = parts.length > 1 ? parts[parts.length - 1] : '🏆';
-                
                 const displayIcon = (isSecret && !isUnlocked) ? '❓' : icon;
-                
                 return (
                   <button 
                     key={ach.id}
                     onClick={() => setSelectedAchievement(ach)}
                     className={clsx(
-                      "aspect-square flex flex-col items-center justify-center p-2 rounded-2xl border transition-all text-center relative overflow-hidden",
+                      "aspect-square flex flex-col items-center justify-between p-2 rounded-2xl border transition-all text-center relative overflow-hidden",
                       isUnlocked 
                         ? "bg-primary/10 border-primary/30 shadow-[0_0_10px_rgba(255,193,7,0.1)] opacity-100 hover:bg-primary/20" 
                         : "bg-surface border-white/5 opacity-40 grayscale hover:opacity-60"
                     )}
                   >
                     <div className={clsx("absolute top-1 left-1 w-1.5 h-1.5 rounded-full", getRarityColor(ach.rarity))} />
-                    
                     {isUnlocked && (
                       <div className="absolute top-1 right-1">
                         <CheckCircle2 className="w-3 h-3 text-primary" />
                       </div>
                     )}
-                    
-                    <span className="text-2xl mb-1 drop-shadow-md">{displayIcon}</span>
+                    <div className="flex-1 flex items-center justify-center min-h-0">
+                      <span className="text-2xl drop-shadow-md">{displayIcon}</span>
+                    </div>
+                    {pct != null && (
+                      <span className="text-[9px] text-white/35 uppercase tracking-wider shrink-0">{pct}% joueurs</span>
+                    )}
                   </button>
                 );
               })}
@@ -583,6 +604,16 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
                       ? "Déverrouille ce succès pour découvrir son secret."
                       : (selectedAchievement as any).description || "Pas de description disponible."}
                   </p>
+
+                  {achievementRarity && achievementRarity.totalUsers > 0 && (
+                    <p className="mt-3 text-white/35 text-[10px] uppercase tracking-wider">
+                      {(() => {
+                        const count = achievementRarity.byAchievement[selectedAchievement.id] ?? 0;
+                        const pct = Math.round((count / achievementRarity.totalUsers) * 100);
+                        return `${pct}% joueurs`;
+                      })()}
+                    </p>
+                  )}
                 </div>
               </motion.div>
             </div>
