@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from '../db.js';
-import { requireAuth, gameSubmitLimiter, safeJsonParse } from '../utils.js';
+import { requireAuth, gameSubmitLimiter, safeJsonParse, getGlobalPointsMultiplier } from '../utils.js';
 
 const router = express.Router();
 
@@ -30,6 +30,8 @@ router.post('/submit', requireAuth, gameSubmitLimiter, (req: any, res: any) => {
     const now = Date.now();
     const avgCrossings = Math.floor(crossings / tripCount);
     const calculatedScore = isFailed ? 0 : crossings;
+    const multiplier = getGlobalPointsMultiplier();
+    const addedPoints = Math.round(calculatedScore * multiplier);
 
     if (isFailed) {
       db.prepare(`
@@ -54,7 +56,7 @@ router.post('/submit', requireAuth, gameSubmitLimiter, (req: any, res: any) => {
             longest_trip_km = MAX(longest_trip_km, ?), 
             max_crossings_in_trip = MAX(max_crossings_in_trip, ?)
         WHERE id = ?
-      `).run(calculatedScore, calculatedScore, calculatedScore > 0 ? crossings : 0, tripCount, distanceKm, distanceKm, avgCrossings, userId);
+      `).run(addedPoints, addedPoints, calculatedScore > 0 ? crossings : 0, tripCount, distanceKm, distanceKm, avgCrossings, userId);
     }
 
     db.prepare(`

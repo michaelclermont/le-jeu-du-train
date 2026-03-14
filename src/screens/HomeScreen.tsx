@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogOut, Map, BarChart3, Trophy, History, CarFront, Zap, Minus, Plus, ShieldAlert, MessageSquare, Settings, Users, AlertTriangle, Info, AlertOctagon, Menu, Navigation, Activity } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -12,6 +12,7 @@ import { ScoreCard } from '../components/ScoreCard';
 import { Button } from '../components/Button';
 import { TripPlanner } from '../components/TripPlanner';
 import { LiveTracker } from '../components/LiveTracker';
+import { useUnreadFeedbackCount } from '../hooks/useUnreadFeedbackCount';
 import clsx from 'clsx';
 
 type ActiveOption = 'none' | 'free' | 'quick' | 'gps' | 'live';
@@ -28,6 +29,8 @@ export function HomeScreen() {
   const [globalMultiplier, setGlobalMultiplier] = useState(1);
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [showMenuModal, setShowMenuModal] = useState(false);
+  const location = useLocation();
+  const unreadFeedbackCount = useUnreadFeedbackCount(currentUser?.id, location.pathname === '/');
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -159,10 +162,15 @@ export function HomeScreen() {
           </button>
           <button 
             onClick={() => setShowMenuModal(true)}
-            className="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/5 transition-colors"
+            className="relative w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/5 transition-colors"
             title="Menu"
           >
             <Menu className="w-5 h-5" />
+            {unreadFeedbackCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-primary text-black text-[10px] font-bold">
+                {unreadFeedbackCount > 99 ? '99+' : unreadFeedbackCount}
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -357,10 +365,15 @@ export function HomeScreen() {
 
               <button 
                 onClick={() => { setShowMenuModal(false); navigate('/feedback'); }}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-white/10 transition-colors text-left"
+                className="relative w-full flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-white/10 transition-colors text-left"
               >
-                <MessageSquare className="w-5 h-5 text-purple-400" />
+                <MessageSquare className="w-5 h-5 text-purple-400 shrink-0" />
                 <span className="font-bold text-white">Aide & Retours</span>
+                {unreadFeedbackCount > 0 && (
+                  <span className="ml-auto min-w-[22px] h-[22px] px-1.5 flex items-center justify-center rounded-full bg-primary text-black text-xs font-bold">
+                    {unreadFeedbackCount > 99 ? '99+' : unreadFeedbackCount}
+                  </span>
+                )}
               </button>
 
               <button 

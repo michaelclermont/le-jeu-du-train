@@ -62,7 +62,7 @@ export interface Achievement {
 }
 
 export type FeedbackType = 'bug' | 'feedback';
-export type FeedbackStatus = 'pending' | 'in_progress' | 'resolved' | 'rejected' | 'completed' | 'closed';
+export type FeedbackStatus = 'new' | 'pending' | 'in_progress' | 'resolved' | 'rejected' | 'completed' | 'closed';
 
 export interface FeedbackReply {
   senderId: number;

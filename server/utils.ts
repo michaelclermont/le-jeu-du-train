@@ -49,3 +49,17 @@ export const safeJsonParse = (str: string | null) => {
   if (!str) return undefined;
   try { return JSON.parse(str); } catch { return undefined; }
 };
+
+/** Get a setting from server DB; returns string value or undefined. */
+export function getSetting(key: string): string | undefined {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  return row?.value;
+}
+
+/** Get global points multiplier (only applies to newly added points). Default 1. */
+export function getGlobalPointsMultiplier(): number {
+  const v = getSetting('globalMultiplier');
+  if (v == null || v === '') return 1;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}

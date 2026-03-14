@@ -46,7 +46,7 @@ router.post('/submit', requireAuth, (req: any, res: any) => {
     const now = Date.now();
     const info = db.prepare(`
       INSERT INTO feedback (user_id, type, message, status, created_at, updated_at)
-      VALUES (?, ?, ?, 'pending', ?, ?)
+      VALUES (?, ?, ?, 'new', ?, ?)
     `).run(req.user.id, type, message.trim(), now, now);
     const row = db.prepare('SELECT * FROM feedback WHERE id = ?').get(info.lastInsertRowid) as any;
     res.status(201).json(rowToFeedback(row));
