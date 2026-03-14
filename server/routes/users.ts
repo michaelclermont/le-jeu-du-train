@@ -138,6 +138,25 @@ router.post('/achievements', requireAuth, (req: any, res: any) => {
   }
 });
 
+// GET /api/users/achievement-rarity — % of users who have each achievement (for profile display)
+router.get('/achievement-rarity', requireAuth, (req: any, res: any) => {
+  try {
+    const totalRow = db.prepare('SELECT COUNT(*) as n FROM users').get() as { n: number };
+    const totalUsers = totalRow?.n ?? 0;
+    const rows = db.prepare(`
+      SELECT achievement_id, COUNT(DISTINCT user_id) as c
+      FROM user_achievements
+      GROUP BY achievement_id
+    `).all() as { achievement_id: string; c: number }[];
+    const byAchievement: Record<string, number> = {};
+    for (const r of rows) byAchievement[r.achievement_id] = r.c;
+    res.json({ totalUsers, byAchievement });
+  } catch (err: any) {
+    console.error('Achievement rarity error:', err.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // GET /api/users/:id
 router.get('/:id', requireAuth, (req: any, res: any) => {
   try {
