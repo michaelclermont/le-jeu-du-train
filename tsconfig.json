@@ -3,6 +3,7 @@
     "target": "ES2022",                       // modern JavaScript output
     "module": "NodeNext",                      // required for Node 24 ESM
     "moduleResolution": "NodeNext",           // resolves imports like Node would
+    "jsx": "react-jsx",                       // React 17+ JSX transform: no need to import React in every file
     "esModuleInterop": true,                  // allows default imports from CommonJS
     "forceConsistentCasingInFileNames": true, // avoids file casing issues
     "strict": true,                            // enable all strict type checks
@@ -13,6 +14,6 @@
     "strictPropertyInitialization": false,     // optional: avoids issues with class property initialization
     "allowJs": true                             // allows importing JS files directly
   },
-  "include": ["./server/**/*.ts", "./server/**/*.js"], // include all TS and JS source files
-  "exclude": ["node_modules", "dist"]                  // ignore build and dependencies
+  "include": ["./server/**/*.ts", "./server/**/*.js"], // frontend is built by Vite with its own resolution
+  "exclude": ["node_modules", "dist"]
 }

@@ -40,6 +40,13 @@ router.get('/me', requireAuth, (req: any, res: any) => {
 
     const pointsRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE points > ?').get(user.points ?? 0) as { n: number }).n;
     const tripsRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE trip_count > ?').get(user.trip_count ?? 0) as { n: number }).n;
+    const recordRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE COALESCE(highest_score, 0) > ?').get(user.highest_score ?? 0) as { n: number }).n;
+    const achievementCount = achievementIds.length;
+    const achievementsRank = 1 + (db.prepare(`
+      SELECT COUNT(*) as n FROM (SELECT user_id FROM user_achievements GROUP BY user_id HAVING COUNT(*) > ?)
+    `).get(achievementCount) as { n: number }).n;
+    const streakRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE streak > ?').get(user.streak ?? 0) as { n: number }).n;
+    const totalDistanceRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE COALESCE(total_distance_km, 0) > ?').get(user.total_distance_km ?? 0) as { n: number }).n;
 
     res.json({
       user: {
@@ -60,6 +67,10 @@ router.get('/me', requireAuth, (req: any, res: any) => {
         homeLocation: safeJsonParse(user.home_location),
         pointsRank,
         tripsRank,
+        recordRank,
+        achievementsRank,
+        streakRank,
+        totalDistanceRank,
       },
       achievements: achievementIds,
       recentTrips: sessions.map(sessionToTrip),
@@ -193,6 +204,13 @@ router.get('/:id', requireAuth, (req: any, res: any) => {
 
     const pointsRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE points > ?').get(user.points ?? 0) as { n: number }).n;
     const tripsRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE trip_count > ?').get(user.trip_count ?? 0) as { n: number }).n;
+    const recordRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE COALESCE(highest_score, 0) > ?').get(user.highest_score ?? 0) as { n: number }).n;
+    const achievementCount = achievementIds.length;
+    const achievementsRank = 1 + (db.prepare(`
+      SELECT COUNT(*) as n FROM (SELECT user_id FROM user_achievements GROUP BY user_id HAVING COUNT(*) > ?)
+    `).get(achievementCount) as { n: number }).n;
+    const streakRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE streak > ?').get(user.streak ?? 0) as { n: number }).n;
+    const totalDistanceRank = 1 + (db.prepare('SELECT COUNT(*) as n FROM users WHERE COALESCE(total_distance_km, 0) > ?').get(user.total_distance_km ?? 0) as { n: number }).n;
 
     res.json({
       user: {
@@ -211,6 +229,10 @@ router.get('/:id', requireAuth, (req: any, res: any) => {
         isAdmin: user.is_admin === 1,
         pointsRank,
         tripsRank,
+        recordRank,
+        achievementsRank,
+        streakRank,
+        totalDistanceRank,
       },
       achievements: achievementIds,
       recentTrips: sessions.map(sessionToTrip),

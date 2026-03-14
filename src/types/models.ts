@@ -37,6 +37,14 @@ export interface User {
   pointsRank?: number;
   /** Global rank by trip count (1 = first). */
   tripsRank?: number;
+  /** Global rank by achievement count (1 = first). */
+  achievementsRank?: number;
+  /** Global rank by highest single-trip score (1 = first). */
+  recordRank?: number;
+  /** Global rank by streak (1 = first). */
+  streakRank?: number;
+  /** Global rank by total distance km (1 = first). */
+  totalDistanceRank?: number;
 }
 
 export interface Trip {
