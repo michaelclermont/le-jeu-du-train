@@ -202,4 +202,81 @@ router.post('/resolve-reset', requireAuth, requireAdmin, (req: any, res: any) =>
   }
 });
 
+// Dummy users for dev: Alice (alice_w) and Bob (bob_builder). Shared dummy password.
+const DUMMY_PASSWORD = 'dummy-dev-123';
+const DUMMY_USERS = [
+  { username: 'alice_w', displayName: 'Alice' },
+  { username: 'bob_builder', displayName: 'Bob' },
+] as const;
+
+// POST /api/admin/dummy-users — create Alice & Bob (admin only, dev)
+router.post('/dummy-users', requireAuth, requireAdmin, (req: any, res: any) => {
+  try {
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(DUMMY_PASSWORD, salt);
+    const createdAt = Date.now();
+    const insert = db.prepare(`
+      INSERT INTO users (username, display_name, password_hash, created_at, is_admin, recovery_phrase, email, phone)
+      VALUES (?, ?, ?, ?, 0, NULL, NULL, NULL)
+    `);
+    let created = 0;
+    for (const { username, displayName } of DUMMY_USERS) {
+      const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+      if (existing) continue;
+      insert.run(username, displayName, passwordHash, createdAt);
+      created++;
+    }
+    res.status(201).json({ success: true, created });
+  } catch (err: any) {
+    console.error('Admin dummy-users error:', err.message);
+    res.status(500).json({ error: 'Échec création dummy users.' });
+  }
+});
+
+// POST /api/admin/bot-action — send or accept friend request as bot (admin only, dev)
+router.post('/bot-action', requireAuth, requireAdmin, (req: any, res: any) => {
+  try {
+    const { action, botName } = req.body;
+    const allowedBots = ['alice_w', 'bob_builder'];
+    if (typeof action !== 'string' || typeof botName !== 'string' || !allowedBots.includes(botName)) {
+      return res.status(400).json({ error: 'Action ou bot invalide.' });
+    }
+    if (action !== 'send_request' && action !== 'accept_request') {
+      return res.status(400).json({ error: 'Action invalide.' });
+    }
+
+    const bot = db.prepare('SELECT id FROM users WHERE username = ?').get(botName) as { id: number } | undefined;
+    if (!bot) return res.status(404).json({ error: 'Bot (Alice ou Bob) non trouvé. Créez-les d\'abord.' });
+
+    const currentUserId = req.user.id;
+    const botId = bot.id;
+
+    if (action === 'send_request') {
+      const existing = db.prepare(
+        'SELECT id, status FROM friend_requests WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)'
+      ).get(currentUserId, botId, botId, currentUserId) as any;
+      if (existing) {
+        if (existing.status === 'accepted') return res.status(400).json({ error: 'Vous êtes déjà amis.' });
+        return res.status(400).json({ error: 'Demande déjà envoyée ou en attente.' });
+      }
+      const now = Date.now();
+      db.prepare(
+        'INSERT INTO friend_requests (sender_id, receiver_id, status, created_at) VALUES (?, ?, ?, ?)'
+      ).run(currentUserId, botId, 'pending', now);
+      return res.json({ success: true, message: 'Demande envoyée.' });
+    }
+
+    // accept_request: bot sent request to current user → accept it
+    const row = db.prepare(
+      'SELECT id FROM friend_requests WHERE sender_id = ? AND receiver_id = ? AND status = ?'
+    ).get(botId, currentUserId, 'pending') as { id: number } | undefined;
+    if (!row) return res.status(404).json({ error: 'Aucune demande en attente de ce bot.' });
+    db.prepare('UPDATE friend_requests SET status = ? WHERE id = ?').run('accepted', row.id);
+    res.json({ success: true, message: 'Demande acceptée.' });
+  } catch (err: any) {
+    console.error('Admin bot-action error:', err.message);
+    res.status(500).json({ error: 'Action échouée.' });
+  }
+});
+
 export default router;
