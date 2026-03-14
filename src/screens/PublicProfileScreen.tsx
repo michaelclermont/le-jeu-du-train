@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, User as UserIcon, MapPin, BarChart3, Calendar, UserPlus, UserMinus, Check, X, Shield, Clock, Settings, Trophy, History, Lock, CheckCircle2, Trash2 } from 'lucide-react';
+import { ArrowLeft, User as UserIcon, MapPin, BarChart3, Calendar, UserPlus, UserMinus, Check, X, Shield, Clock, Settings, Trophy, History, Lock, CheckCircle2, Trash2, Zap } from 'lucide-react';
 import { AuthService } from '../services/AuthService';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToastStore } from '../store/useToastStore';
@@ -354,7 +354,7 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
               {currentUser?.isAdmin && !isMe && user?.id && (
                 <button
                   onClick={() => setShowNukeConfirm(true)}
-                  className="w-full mt-2 py-2 bg-failure/10 text-failure font-bold rounded-xl flex items-center justify-center gap-2 border border-failure/20 hover:bg-failure/20 transition-colors"
+                  className="w-full mt-2 py-2 bg-red-500/10 text-red-400 font-bold rounded-xl flex items-center justify-center gap-2 border border-red-500/20 hover:bg-red-500/20 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                   Supprimer l'utilisateur
@@ -383,7 +383,7 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
                   className="flex-1 py-2 rounded-xl bg-failure text-white font-bold hover:bg-failure/90 transition-colors flex items-center justify-center gap-2"
                 >
                   <Trash2 className="w-4 h-4" />
-                  Supprimer
+                  Oui
                 </button>
               </div>
             </div>
@@ -425,8 +425,8 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
                 className="grid grid-cols-2 gap-3"
               >
                 <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center relative">
-                  {user.pointsRank != null && user.pointsRank < 100 && (
-                    <span className="absolute top-3 right-3 text-2xl font-normal text-white/10 tabular-nums" aria-hidden>#{user.pointsRank}</span>
+                  {user.pointsRank != null && user.pointsRank <= 100 && (
+                    <span className="absolute top-3 right-3 text-2xl font-extrabold text-white/[0.075] tabular-nums" aria-hidden>#{user.pointsRank}</span>
                   )}
                   {user.pointsRank != null && user.pointsRank >= 1 && user.pointsRank <= 3 && (
                     <motion.span
@@ -450,14 +450,35 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
                   <span className="text-2xl font-display text-white">{user.points}</span>
                   <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">Points</span>
                 </div>
-                <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center">
-                  <Trophy className="w-6 h-6 text-primary mb-2" />
+                <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center relative">
+                  {user.recordRank != null && user.recordRank <= 100 && (
+                    <span className="absolute top-3 right-3 text-2xl font-extrabold text-white/[0.075] tabular-nums" aria-hidden>#{user.recordRank}</span>
+                  )}
+                  {user.recordRank != null && user.recordRank >= 1 && user.recordRank <= 3 && (
+                    <motion.span
+                      className={clsx(
+                        "absolute bottom-3 right-3 flex items-center justify-center",
+                        user.recordRank === 1 && "text-amber-400/50",
+                        user.recordRank === 2 && "text-slate-300/50",
+                        user.recordRank === 3 && "text-amber-600/50"
+                      )}
+                      style={{
+                        filter: user.recordRank === 1 ? 'drop-shadow(0 0 6px rgba(251,191,36,0.5))' : user.recordRank === 2 ? 'drop-shadow(0 0 6px rgba(203,213,225,0.5))' : 'drop-shadow(0 0 6px rgba(217,119,6,0.5))',
+                      }}
+                      animate={{ opacity: [0.7, 1, 0.7] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                      aria-hidden
+                    >
+                      <Trophy className="w-6 h-6" />
+                    </motion.span>
+                  )}
+                  <Zap className="w-6 h-6 text-yellow-400 mb-2" />
                   <span className="text-2xl font-display text-white">{user.highestScore || 0}</span>
                   <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">Record</span>
                 </div>
                 <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center relative">
-                  {user.tripsRank != null && user.tripsRank < 100 && (
-                    <span className="absolute top-3 right-3 text-2xl font-normal text-white/10 tabular-nums" aria-hidden>#{user.tripsRank}</span>
+                  {user.tripsRank != null && user.tripsRank <= 100 && (
+                    <span className="absolute top-3 right-3 text-2xl font-extrabold text-white/[0.075] tabular-nums" aria-hidden>#{user.tripsRank}</span>
                   )}
                   {user.tripsRank != null && user.tripsRank >= 1 && user.tripsRank <= 3 && (
                     <motion.span
@@ -481,12 +502,80 @@ export function PublicProfileScreen({ isMe = false }: { isMe?: boolean }) {
                   <span className="text-2xl font-display text-white">{user.tripCount}</span>
                   <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">Trajets</span>
                 </div>
-                <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center">
+                <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center relative">
+                  {user.achievementsRank != null && user.achievementsRank <= 100 && (
+                    <span className="absolute top-3 right-3 text-2xl font-extrabold text-white/[0.075] tabular-nums" aria-hidden>#{user.achievementsRank}</span>
+                  )}
+                  {user.achievementsRank != null && user.achievementsRank >= 1 && user.achievementsRank <= 3 && (
+                    <motion.span
+                      className={clsx(
+                        "absolute bottom-3 right-3 flex items-center justify-center",
+                        user.achievementsRank === 1 && "text-amber-400/50",
+                        user.achievementsRank === 2 && "text-slate-300/50",
+                        user.achievementsRank === 3 && "text-amber-600/50"
+                      )}
+                      style={{
+                        filter: user.achievementsRank === 1 ? 'drop-shadow(0 0 6px rgba(251,191,36,0.5))' : user.achievementsRank === 2 ? 'drop-shadow(0 0 6px rgba(203,213,225,0.5))' : 'drop-shadow(0 0 6px rgba(217,119,6,0.5))',
+                      }}
+                      animate={{ opacity: [0.7, 1, 0.7] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                      aria-hidden
+                    >
+                      <Trophy className="w-6 h-6" />
+                    </motion.span>
+                  )}
+                  <Trophy className="w-6 h-6 text-primary mb-2" />
+                  <span className="text-2xl font-display text-white">{achievements.size}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">Succès</span>
+                </div>
+                <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center relative">
+                  {user.streakRank != null && user.streakRank <= 100 && (
+                    <span className="absolute top-3 right-3 text-2xl font-extrabold text-white/[0.075] tabular-nums" aria-hidden>#{user.streakRank}</span>
+                  )}
+                  {user.streakRank != null && user.streakRank >= 1 && user.streakRank <= 3 && (
+                    <motion.span
+                      className={clsx(
+                        "absolute bottom-3 right-3 flex items-center justify-center",
+                        user.streakRank === 1 && "text-amber-400/50",
+                        user.streakRank === 2 && "text-slate-300/50",
+                        user.streakRank === 3 && "text-amber-600/50"
+                      )}
+                      style={{
+                        filter: user.streakRank === 1 ? 'drop-shadow(0 0 6px rgba(251,191,36,0.5))' : user.streakRank === 2 ? 'drop-shadow(0 0 6px rgba(203,213,225,0.5))' : 'drop-shadow(0 0 6px rgba(217,119,6,0.5))',
+                      }}
+                      animate={{ opacity: [0.7, 1, 0.7] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                      aria-hidden
+                    >
+                      <Trophy className="w-6 h-6" />
+                    </motion.span>
+                  )}
                   <Calendar className="w-6 h-6 text-blue-400 mb-2" />
                   <span className="text-2xl font-display text-white">{user.streak}</span>
                   <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">Jours Streak</span>
                 </div>
-                <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center">
+                <div className="bg-surface border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center text-center relative">
+                  {user.totalDistanceRank != null && user.totalDistanceRank <= 100 && (
+                    <span className="absolute top-3 right-3 text-2xl font-extrabold text-white/[0.075] tabular-nums" aria-hidden>#{user.totalDistanceRank}</span>
+                  )}
+                  {user.totalDistanceRank != null && user.totalDistanceRank >= 1 && user.totalDistanceRank <= 3 && (
+                    <motion.span
+                      className={clsx(
+                        "absolute bottom-3 right-3 flex items-center justify-center",
+                        user.totalDistanceRank === 1 && "text-amber-400/50",
+                        user.totalDistanceRank === 2 && "text-slate-300/50",
+                        user.totalDistanceRank === 3 && "text-amber-600/50"
+                      )}
+                      style={{
+                        filter: user.totalDistanceRank === 1 ? 'drop-shadow(0 0 6px rgba(251,191,36,0.5))' : user.totalDistanceRank === 2 ? 'drop-shadow(0 0 6px rgba(203,213,225,0.5))' : 'drop-shadow(0 0 6px rgba(217,119,6,0.5))',
+                      }}
+                      animate={{ opacity: [0.7, 1, 0.7] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                      aria-hidden
+                    >
+                      <Trophy className="w-6 h-6" />
+                    </motion.span>
+                  )}
                   <Shield className="w-6 h-6 text-green-400 mb-2" />
                   <span className="text-2xl font-display text-white">{Math.round(user.totalDistanceKm)}</span>
                   <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">Km Total</span>

@@ -679,28 +679,6 @@ export function AdminScreen() {
         </div>
       </header>
 
-      {/* Sync Status Banner */}
-      <div className="mb-6 bg-surface border border-white/5 rounded-2xl p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-            <RefreshCw className="w-4 h-4 text-primary" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-white">État de Synchronisation</p>
-            <p className="text-[10px] text-white/40">Dernière mise à jour : {new Date(LAST_SYNC).toLocaleString('fr-FR')}</p>
-          </div>
-        </div>
-        <a 
-          href="https://github.com/FuzzyLotus/le-jeu-du-train/" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full hover:bg-green-500/20 transition-colors cursor-pointer"
-        >
-          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-          <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">GitHub : Main</span>
-        </a>
-      </div>
-
       {/* Tabs */}
       <div className="grid grid-cols-4 gap-2 mb-6 bg-surface border border-white/5 p-2 rounded-2xl">
         <button
@@ -1826,6 +1804,28 @@ export function AdminScreen() {
 
         </div>
       )}
+
+      {/* Sync Status Banner */}
+      <div className="mt-6 mb-6 bg-surface border border-white/5 rounded-2xl p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+            <RefreshCw className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white">État de Synchronisation</p>
+            <p className="text-[10px] text-white/40">Dernière mise à jour : {new Date(LAST_SYNC).toLocaleString('fr-FR')}</p>
+          </div>
+        </div>
+        <a 
+          href="https://github.com/FuzzyLotus/le-jeu-du-train/" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full hover:bg-green-500/20 transition-colors cursor-pointer"
+        >
+          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+          <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">GitHub : Main</span>
+        </a>
+      </div>
 
       {/* Edit User Modal */}
       <AnimatePresence>
