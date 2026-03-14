@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Bug, MessageSquare, Clock, CheckCircle2, XCircle, Loader2, MessageCircle, Lock, Github, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Send, Bug, MessageSquare, Clock, CheckCircle2, XCircle, Loader2, Lock, Github, ExternalLink } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToastStore } from '../store/useToastStore';
 import { AuthService } from '../services/AuthService';
 import { Button } from '../components/Button';
+import { getFeedbackLastRead, setFeedbackLastRead } from '../utils/feedbackLastRead';
 import clsx from 'clsx';
 import type { Feedback, FeedbackType, FeedbackStatus, FeedbackReply } from '../types/models';
 
@@ -19,8 +20,9 @@ export function FeedbackScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [myFeedback, setMyFeedback] = useState<Feedback[]>([]);
   const [replyText, setReplyText] = useState<{[key: number]: string}>({});
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [showClosed, setShowClosed] = useState(false);
+  const [feedbackFilter, setFeedbackFilter] = useState<'all' | 'new' | 'pending' | 'in_progress' | 'resolved' | 'rejected'>('new');
+  const [unreadItemIds, setUnreadItemIds] = useState<Set<number>>(new Set());
+  const hasMarkedReadRef = useRef(false);
 
   const fetchFeedback = async () => {
     if (!currentUser?.id) return;
@@ -42,6 +44,39 @@ export function FeedbackScreen() {
   useEffect(() => {
     fetchFeedback();
   }, [currentUser?.id]);
+
+  // Mark feedback as read when viewing the page and capture which items were unread for highlighting
+  useEffect(() => {
+    if (!currentUser?.id || isLoading || hasMarkedReadRef.current) return;
+    hasMarkedReadRef.current = true;
+    const prevLastRead = getFeedbackLastRead(currentUser.id);
+    const unreadItems = myFeedback.filter((item) =>
+      item.replies?.some((r) => r.isAdmin && r.createdAt > prevLastRead)
+    );
+    const ids = new Set(
+      unreadItems.map((item) => item.id).filter((id): id is number => id != null)
+    );
+    setUnreadItemIds(ids);
+    setFeedbackLastRead(currentUser.id, Date.now());
+    // Auto-select the first filter that has an unread message (same order as filter buttons)
+    if (ids.size > 0) {
+      const filterOrder: Array<'new' | 'in_progress' | 'pending' | 'resolved' | 'rejected'> = ['new', 'in_progress', 'pending', 'resolved', 'rejected'];
+      for (const filter of filterOrder) {
+        const hasUnreadInFilter = unreadItems.some((item) => {
+          if (filter === 'new') return item.status === 'new';
+          if (filter === 'in_progress') return item.status === 'in_progress';
+          if (filter === 'pending') return item.status === 'pending';
+          if (filter === 'resolved') return item.status === 'resolved' || item.status === 'completed';
+          if (filter === 'rejected') return item.status === 'rejected' || item.status === 'closed';
+          return false;
+        });
+        if (hasUnreadInFilter) {
+          setFeedbackFilter(filter);
+          break;
+        }
+      }
+    }
+  }, [currentUser?.id, isLoading, myFeedback]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,6 +120,7 @@ export function FeedbackScreen() {
       if (!response.ok) throw new Error('Failed to reply');
 
       setReplyText(prev => ({ ...prev, [feedbackId]: '' }));
+      setUnreadItemIds(prev => { const next = new Set(prev); next.delete(feedbackId); return next; });
       addToast({ title: 'Envoyé!', message: 'Réponse ajoutée.', type: 'success' });
       fetchFeedback();
     } catch (error) {
@@ -95,6 +131,7 @@ export function FeedbackScreen() {
 
   const getStatusIcon = (status: FeedbackStatus) => {
     switch (status) {
+      case 'new': return <MessageSquare className="w-4 h-4 text-emerald-400" />;
       case 'pending': return <Clock className="w-4 h-4 text-yellow-500" />;
       case 'in_progress': return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
       case 'resolved': 
@@ -106,6 +143,7 @@ export function FeedbackScreen() {
 
   const getStatusLabel = (status: FeedbackStatus) => {
     switch (status) {
+      case 'new': return 'Nouveau';
       case 'pending': return 'En attente';
       case 'in_progress': return 'En cours';
       case 'resolved': return 'Résolu';
@@ -116,8 +154,16 @@ export function FeedbackScreen() {
   };
 
   const closedStatuses: FeedbackStatus[] = ['resolved', 'completed', 'rejected', 'closed'];
-  const openFeedback = myFeedback?.filter(f => !closedStatuses.includes(f.status)) || [];
-  const closedFeedback = myFeedback?.filter(f => closedStatuses.includes(f.status)) || [];
+  const canReply = (status: FeedbackStatus) => !closedStatuses.includes(status);
+  const filteredFeedback = (myFeedback ?? []).filter((item) => {
+    if (feedbackFilter === 'all') return true;
+    if (feedbackFilter === 'new') return item.status === 'new';
+    if (feedbackFilter === 'pending') return item.status === 'pending';
+    if (feedbackFilter === 'in_progress') return item.status === 'in_progress';
+    if (feedbackFilter === 'resolved') return item.status === 'resolved' || item.status === 'completed';
+    if (feedbackFilter === 'rejected') return item.status === 'rejected' || item.status === 'closed';
+    return true;
+  });
 
   return (
     <div className="min-h-screen flex flex-col p-6 max-w-md mx-auto relative pb-24">
@@ -187,6 +233,70 @@ export function FeedbackScreen() {
             Privé
           </div>
         </div>
+
+        {/* Filters - same as admin */}
+        <div className="flex flex-wrap justify-center gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setFeedbackFilter('new')}
+            className={clsx(
+              "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+              feedbackFilter === 'new' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+            )}
+          >
+            Nouveau
+          </button>
+          <button
+            type="button"
+            onClick={() => setFeedbackFilter('in_progress')}
+            className={clsx(
+              "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+              feedbackFilter === 'in_progress' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+            )}
+          >
+            En cours
+          </button>
+          <button
+            type="button"
+            onClick={() => setFeedbackFilter('pending')}
+            className={clsx(
+              "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+              feedbackFilter === 'pending' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+            )}
+          >
+            En attente
+          </button>
+          <button
+            type="button"
+            onClick={() => setFeedbackFilter('resolved')}
+            className={clsx(
+              "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+              feedbackFilter === 'resolved' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+            )}
+          >
+            Résolu
+          </button>
+          <button
+            type="button"
+            onClick={() => setFeedbackFilter('rejected')}
+            className={clsx(
+              "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+              feedbackFilter === 'rejected' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+            )}
+          >
+            Rejeté
+          </button>
+          <button
+            type="button"
+            onClick={() => setFeedbackFilter('all')}
+            className={clsx(
+              "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+              feedbackFilter === 'all' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+            )}
+          >
+            Tous
+          </button>
+        </div>
         
         <div className="flex flex-col gap-3">
           {isLoading ? (
@@ -195,13 +305,17 @@ export function FeedbackScreen() {
             </div>
           ) : (
             <>
-              {/* Open Feedback */}
-              {openFeedback.map((item) => (
-                <div key={item.id} className="bg-surface border border-white/5 rounded-2xl p-4 overflow-hidden">
-                  <div 
-                    className="flex items-start justify-between mb-2 cursor-pointer"
-                    onClick={() => setExpandedId(expandedId === item.id ? null : item.id!)}
-                  >
+              {filteredFeedback.map((item) => (
+                <div
+                  key={item.id}
+                  className={clsx(
+                    "rounded-3xl px-6 pt-6 pb-4 overflow-hidden border",
+                    unreadItemIds.has(item.id!)
+                      ? "bg-primary/10 border-primary/40 ring-2 ring-primary/30"
+                      : "bg-surface border-white/5"
+                  )}
+                >
+                  <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">
                       {item.type === 'bug' ? (
                         <span className="bg-failure/20 text-failure text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold flex items-center gap-1">
@@ -218,6 +332,7 @@ export function FeedbackScreen() {
                     </div>
                     <div className={clsx(
                       "flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full border",
+                      item.status === 'new' && "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
                       item.status === 'pending' && "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
                       item.status === 'in_progress' && "bg-blue-500/10 text-blue-500 border-blue-500/20",
                       (item.status === 'resolved' || item.status === 'completed') && "bg-green-500/10 text-green-500 border-green-500/20",
@@ -228,7 +343,7 @@ export function FeedbackScreen() {
                     </div>
                   </div>
                   
-                  <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap mb-3">{item.message}</p>
+                  <p className={clsx("text-sm leading-relaxed whitespace-pre-wrap mb-3", canReply(item.status) ? "text-white/80" : "text-white/60")}>{item.message}</p>
 
                   {item.githubIssueUrl && (
                     <a 
@@ -243,9 +358,9 @@ export function FeedbackScreen() {
                     </a>
                   )}
 
-                  {/* Replies Section */}
+                  {/* Replies Section - always visible */}
                   {item.replies && item.replies.length > 0 && (
-                    <div className="mt-4 pl-4 border-l-2 border-white/10 space-y-3">
+                    <div className="mt-4 mb-4 pl-4 border-l-2 border-white/10 space-y-3">
                       {item.replies.map((reply, idx) => (
                         <div key={idx} className={clsx("text-sm", reply.isAdmin ? "text-primary/90" : "text-white/70")}>
                           <div className="flex items-center gap-2 mb-1">
@@ -262,16 +377,16 @@ export function FeedbackScreen() {
                     </div>
                   )}
 
-                  {/* Reply Input */}
-                  {expandedId === item.id && !['resolved', 'completed', 'rejected', 'closed'].includes(item.status) && (
+                  {/* Reply Input - always visible for open items, square send button */}
+                  {canReply(item.status) && (
                     <div className="mt-4 pt-4 border-t border-white/5">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
                         <input
                           type="text"
                           value={replyText[item.id!] || ''}
                           onChange={(e) => setReplyText(prev => ({ ...prev, [item.id!]: e.target.value }))}
                           placeholder="Répondre..."
-                          className="flex-1 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
+                          className="flex-1 min-w-0 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault();
@@ -282,127 +397,19 @@ export function FeedbackScreen() {
                         <button
                           onClick={() => item.id && handleReply(item.id)}
                           disabled={!replyText[item.id!]?.trim()}
-                          className="p-2 bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          className="w-10 h-10 flex-shrink-0 flex items-center justify-center bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           <Send className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
                   )}
-                  
-                  {/* Expand/Collapse Hint */}
-                  {(!expandedId || expandedId !== item.id) && !['resolved', 'completed', 'rejected', 'closed'].includes(item.status) && (
-                    <div 
-                      className="mt-2 text-center"
-                      onClick={() => setExpandedId(item.id!)}
-                    >
-                      <button className="text-[10px] text-white/30 uppercase tracking-wider hover:text-white/50 flex items-center justify-center gap-1 w-full">
-                        <MessageCircle className="w-3 h-3" />
-                        {item.replies?.length ? `${item.replies.length} réponse(s)` : 'Répondre'}
-                      </button>
-                    </div>
-                  )}
                 </div>
               ))}
 
-              {/* Closed Feedback Toggle */}
-              {closedFeedback.length > 0 && (
-                <div className="mt-4">
-                  <button 
-                    onClick={() => setShowClosed(!showClosed)}
-                    className="w-full py-3 px-4 rounded-xl border border-white/5 bg-white/5 text-[10px] text-white/40 uppercase tracking-widest font-bold hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
-                  >
-                    {showClosed ? 'Masquer les messages fermés' : `Voir les messages fermés (${closedFeedback.length})`}
-                  </button>
-                  
-                  {showClosed && (
-                    <div className="flex flex-col gap-3 mt-3">
-                      {closedFeedback.map((item) => (
-                        <div key={item.id} className="bg-surface/50 border border-white/5 rounded-2xl p-4 overflow-hidden opacity-70">
-                          <div 
-                            className="flex items-start justify-between mb-2 cursor-pointer"
-                            onClick={() => setExpandedId(expandedId === item.id ? null : item.id!)}
-                          >
-                            <div className="flex items-center gap-2">
-                              {item.type === 'bug' ? (
-                                <span className="bg-failure/20 text-failure text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold flex items-center gap-1">
-                                  <Bug className="w-3 h-3" /> Bug
-                                </span>
-                              ) : (
-                                <span className="bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold flex items-center gap-1">
-                                  <MessageSquare className="w-3 h-3" /> Suggestion
-                                </span>
-                              )}
-                              <span className="text-xs text-white/30">
-                                {new Date(item.createdAt).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <div className={clsx(
-                              "flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full border",
-                              (item.status === 'resolved' || item.status === 'completed') && "bg-green-500/10 text-green-500 border-green-500/20",
-                              (item.status === 'rejected' || item.status === 'closed') && "bg-red-500/10 text-red-500 border-red-500/20",
-                            )}>
-                              {getStatusIcon(item.status)}
-                              {getStatusLabel(item.status)}
-                            </div>
-                          </div>
-                          
-                          <p className="text-white/60 text-sm leading-relaxed whitespace-pre-wrap mb-3">{item.message}</p>
-
-                          {item.githubIssueUrl && (
-                            <a 
-                              href={item.githubIssueUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 text-[10px] text-white/40 hover:text-primary transition-colors mb-3 bg-white/5 px-2 py-1 rounded-md"
-                            >
-                              <Github className="w-3 h-3" />
-                              GitHub Issue #{item.githubIssueNumber}
-                              <ExternalLink className="w-2 h-2" />
-                            </a>
-                          )}
-
-                          {/* Replies Section */}
-                          {expandedId === item.id && item.replies && item.replies.length > 0 && (
-                            <div className="mt-4 pl-4 border-l-2 border-white/10 space-y-3">
-                              {item.replies.map((reply, idx) => (
-                                <div key={idx} className={clsx("text-sm", reply.isAdmin ? "text-primary/90" : "text-white/70")}>
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-bold text-xs uppercase tracking-wider">
-                                      {reply.isAdmin ? 'Support' : 'Moi'}
-                                    </span>
-                                    <span className="text-[10px] text-white/30">
-                                      {new Date(reply.createdAt).toLocaleString()}
-                                    </span>
-                                  </div>
-                                  <p className="whitespace-pre-wrap">{reply.message}</p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* Show replies count if not expanded */}
-                          {(!expandedId || expandedId !== item.id) && item.replies && item.replies.length > 0 && (
-                            <div 
-                              className="mt-2 text-center"
-                              onClick={() => setExpandedId(item.id!)}
-                            >
-                              <button className="text-[10px] text-white/30 uppercase tracking-wider hover:text-white/50 flex items-center justify-center gap-1 w-full">
-                                <MessageCircle className="w-3 h-3" />
-                                {item.replies.length} réponse(s)
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {openFeedback.length === 0 && closedFeedback.length === 0 && (
-                <div className="text-center text-white/30 py-8 bg-surface/50 rounded-2xl border border-white/5 border-dashed">
-                  Aucun message envoyé pour le moment.
+              {filteredFeedback.length === 0 && (
+                <div className="text-center text-white/30 py-8 bg-surface/50 rounded-3xl border border-white/5 border-dashed">
+                  Aucun message pour ce filtre.
                 </div>
               )}
             </>

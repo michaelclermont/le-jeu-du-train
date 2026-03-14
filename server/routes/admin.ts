@@ -1,7 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import { db } from '../db.js';
-import { requireAuth, requireAdmin, safeJsonParse } from '../utils.js';
+import { requireAuth, requireAdmin, safeJsonParse, getSetting, getGlobalPointsMultiplier } from '../utils.js';
 
 const router = express.Router();
 
@@ -102,7 +102,7 @@ router.patch('/feedback/:id', requireAuth, requireAdmin, (req: any, res: any) =>
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) return res.status(400).json({ error: 'ID invalide' });
     const { status } = req.body;
-    const allowed = ['pending', 'in_progress', 'resolved', 'rejected', 'completed', 'closed'];
+    const allowed = ['new', 'pending', 'in_progress', 'resolved', 'rejected', 'completed', 'closed'];
     if (typeof status !== 'string' || !allowed.includes(status)) {
       return res.status(400).json({ error: 'Statut invalide' });
     }
@@ -136,7 +136,9 @@ router.post('/feedback/:id/reply', requireAuth, requireAdmin, (req: any, res: an
       message: message.trim(),
       createdAt: now,
     });
-    db.prepare('UPDATE feedback SET replies = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(replies), now, id);
+    // When admin replies to a "new" feedback, auto-transition to "in_progress"
+    const newStatus = row.status === 'new' ? 'in_progress' : row.status;
+    db.prepare('UPDATE feedback SET replies = ?, updated_at = ?, status = ? WHERE id = ?').run(JSON.stringify(replies), now, newStatus, id);
     const updated = db.prepare('SELECT * FROM feedback WHERE id = ?').get(id) as any;
     res.json(feedbackRowToJson(updated));
   } catch (err: any) {
@@ -233,6 +235,34 @@ router.post('/dummy-users', requireAuth, requireAdmin, (req: any, res: any) => {
   }
 });
 
+// GET /api/admin/config — get server config (e.g. global points multiplier)
+router.get('/config', requireAuth, requireAdmin, (req: any, res: any) => {
+  try {
+    const globalMultiplier = getSetting('globalMultiplier');
+    const n = globalMultiplier != null && globalMultiplier !== '' ? Number(globalMultiplier) : 1;
+    res.json({ globalMultiplier: Number.isFinite(n) ? n : 1 });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erreur lecture config.' });
+  }
+});
+
+// PATCH /api/admin/config — update server config (global points multiplier; only affects newly added points)
+router.patch('/config', requireAuth, requireAdmin, (req: any, res: any) => {
+  try {
+    const { globalMultiplier } = req.body;
+    if (globalMultiplier !== undefined) {
+      const n = Number(globalMultiplier);
+      if (!Number.isFinite(n) || n <= 0) {
+        return res.status(400).json({ error: 'Multiplicateur invalide (nombre > 0 requis).' });
+      }
+      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('globalMultiplier', String(n));
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erreur sauvegarde config.' });
+  }
+});
+
 // POST /api/admin/bot-action — see server.ts (registered explicitly so it always responds)
 
 // POST /api/admin/generate-trips — add 10 dummy trips for current user (admin only, dev)
@@ -260,7 +290,9 @@ router.post('/generate-trips', requireAuth, requireAdmin, (req: any, res: any) =
 
     const totalScore = TRIP_COUNT * PER_TRIP_SCORE;
     const totalKm = TRIP_COUNT * PER_TRIP_KM;
-    const newPoints = (user.points ?? 0) + totalScore;
+    const multiplier = getGlobalPointsMultiplier();
+    const addedPoints = Math.round(totalScore * multiplier);
+    const newPoints = (user.points ?? 0) + addedPoints;
     db.prepare(`
       UPDATE users
       SET points = points + ?,
@@ -272,7 +304,7 @@ router.post('/generate-trips', requireAuth, requireAdmin, (req: any, res: any) =
           max_crossings_in_trip = MAX(max_crossings_in_trip, ?),
           highest_score = MAX(COALESCE(highest_score, 0), ?)
       WHERE id = ?
-    `).run(totalScore, totalScore, totalScore, TRIP_COUNT, totalKm, PER_TRIP_KM, PER_TRIP_CROSSINGS, newPoints, userId);
+    `).run(addedPoints, addedPoints, totalScore, TRIP_COUNT, totalKm, PER_TRIP_KM, PER_TRIP_CROSSINGS, newPoints, userId);
 
     const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
     const achievementIds = db.prepare('SELECT achievement_id FROM user_achievements WHERE user_id = ?')

@@ -13,6 +13,7 @@ import type { Feedback, FeedbackStatus, FeedbackReply, User, Trip } from '../typ
 import { ACHIEVEMENTS } from '../services/AchievementEngine';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { AuthService } from '../services/AuthService';
+import { getFeedbackAdminLastRead, setFeedbackAdminLastRead } from '../utils/feedbackLastRead';
 
 export function AdminScreen() {
   const navigate = useNavigate();
@@ -31,6 +32,8 @@ export function AdminScreen() {
   const [resolvingRequest, setResolvingRequest] = useState<number | null>(null);
   const [newPasswordForRequest, setNewPasswordForRequest] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [moderationFilter, setModerationFilter] = useState<'all' | 'many_passages' | 'multiple_submissions'>('all');
+  const [feedbackFilter, setFeedbackFilter] = useState<'all' | 'new' | 'pending' | 'resolved' | 'in_progress' | 'rejected'>('new');
 
   // Config State
   const [config, setConfig] = useState({
@@ -42,7 +45,7 @@ export function AdminScreen() {
     enableSimulator: false
   });
 
-  // Load settings
+  // Load settings (IndexedDB + server globalMultiplier so points multiplier is correct)
   useEffect(() => {
     const loadSettings = async () => {
       const settings = await db.settings.toArray();
@@ -53,6 +56,15 @@ export function AdminScreen() {
           newConfig[s.key] = s.value;
         }
       });
+      try {
+        const res = await fetch('/api/admin/config', { headers: AuthService.getAuthHeaders() });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.globalMultiplier != null) newConfig.globalMultiplier = Number(data.globalMultiplier);
+        }
+      } catch {
+        // keep IndexedDB value if server unreachable
+      }
       setConfig(newConfig);
     };
     loadSettings();
@@ -113,10 +125,22 @@ export function AdminScreen() {
         await db.settings.put({ key: 'announcementType', value: config.announcementType });
         await db.settings.put({ key: 'enableSimulator', value: config.enableSimulator });
       });
+      const mult = Number(config.globalMultiplier);
+      if (Number.isFinite(mult) && mult > 0) {
+        const res = await fetch('/api/admin/config', {
+          method: 'PATCH',
+          headers: { ...AuthService.getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ globalMultiplier: mult })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || res.statusText);
+        }
+      }
       addToast({ title: 'Sauvegardé', message: 'Configuration mise à jour.', type: 'success' });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      addToast({ title: 'Erreur', message: 'Échec sauvegarde config.', type: 'error' });
+      addToast({ title: 'Erreur', message: e?.message || 'Échec sauvegarde config.', type: 'error' });
     }
   };
 
@@ -146,7 +170,34 @@ export function AdminScreen() {
     if (activeTab === 'feedback') {
       loadFeedback();
     }
+    if (activeTab !== 'feedback') {
+      adminHasMarkedReadRef.current = false;
+    }
   }, [activeTab, currentUser?.id]);
+
+  // Fetch feedback when not on feedback tab to compute admin unread count (user replies since last read)
+  useEffect(() => {
+    const userId = currentUser?.id;
+    if (!userId || activeTab === 'feedback') return;
+    let cancelled = false;
+    const fetchCount = async () => {
+      try {
+        const response = await fetch('/api/admin/feedback', { headers: AuthService.getAuthHeaders() });
+        if (!response.ok || cancelled) return;
+        const data: Feedback[] = await response.json();
+        const lastRead = getFeedbackAdminLastRead(userId);
+        const count = data.filter((item) =>
+          (item.status === 'new' && item.createdAt > lastRead) ||
+          item.replies?.some((r) => !r.isAdmin && r.createdAt > lastRead)
+        ).length;
+        if (!cancelled) setAdminUnreadFeedbackCount(count);
+      } catch {
+        if (!cancelled) setAdminUnreadFeedbackCount(0);
+      }
+    };
+    fetchCount();
+    return () => { cancelled = true; };
+  }, [currentUser?.id, activeTab]);
 
   const loadFeedback = async () => {
     try {
@@ -200,6 +251,29 @@ export function AdminScreen() {
   const allTrips = useLiveQuery(() => db.trips.toArray()); // All trips for analytics
   const [feedback, setFeedback] = useState<Feedback[]>([]);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [adminUnreadFeedbackCount, setAdminUnreadFeedbackCount] = useState(0);
+  const [adminUnreadItemIds, setAdminUnreadItemIds] = useState<Set<number>>(new Set());
+  const adminHasMarkedReadRef = useRef(false);
+
+  // Mark admin feedback as read when viewing the tab and capture unread item ids for highlighting (user replies)
+  useEffect(() => {
+    if (!currentUser?.id || activeTab !== 'feedback' || loadingFeedback || adminHasMarkedReadRef.current) return;
+    adminHasMarkedReadRef.current = true;
+    const prevLastRead = getFeedbackAdminLastRead(currentUser.id);
+    const ids = new Set(
+      feedback
+        .filter((item) =>
+          (item.status === 'new' && item.createdAt > prevLastRead) ||
+          item.replies?.some((r) => !r.isAdmin && r.createdAt > prevLastRead)
+        )
+        .map((item) => item.id)
+        .filter((id): id is number => id != null)
+    );
+    setAdminUnreadItemIds(ids);
+    setFeedbackAdminLastRead(currentUser.id, Date.now());
+    setAdminUnreadFeedbackCount(0);
+  }, [currentUser?.id, activeTab, loadingFeedback, feedback]);
+
   const myAchievements = useLiveQuery(
     () => currentUser?.id ? db.achievements.where('userId').equals(currentUser.id).toArray() : [],
     [currentUser?.id]
@@ -344,7 +418,7 @@ export function AdminScreen() {
     }
   };
 
-  const handleReply = async (feedbackId: number) => {
+  const handleReply = async (feedbackId: number, previousStatus?: FeedbackStatus) => {
     if (!currentUser?.id || !replyText[feedbackId]?.trim()) return;
 
     try {
@@ -360,6 +434,9 @@ export function AdminScreen() {
       const updated = await response.json();
       setFeedback(prev => prev.map(f => f.id === feedbackId ? { ...f, ...updated } : f));
       setReplyText(prev => ({ ...prev, [feedbackId]: '' }));
+      setAdminUnreadItemIds(prev => { const next = new Set(prev); next.delete(feedbackId); return next; });
+      // When replying to a Nouveau item, server sets it to En cours; switch filter so the thread stays visible
+      if (previousStatus === 'new') setFeedbackFilter('in_progress');
       addToast({ title: 'Envoyé!', message: 'Réponse ajoutée.', type: 'success' });
     } catch (error: any) {
       console.error(error);
@@ -564,12 +641,17 @@ export function AdminScreen() {
         <button
           onClick={() => setActiveTab('feedback')}
           className={clsx(
-            "flex flex-col items-center justify-center py-4 rounded-xl text-[10px] font-bold transition-all uppercase tracking-wider gap-1.5 min-h-[72px]",
+            "relative flex flex-col items-center justify-center py-4 rounded-xl text-[10px] font-bold transition-all uppercase tracking-wider gap-1.5 min-h-[72px]",
             activeTab === 'feedback' ? "bg-white/10 text-white shadow-sm" : "text-white/50 hover:text-white hover:bg-white/5"
           )}
         >
           <MessageSquare className="w-6 h-6" />
           Avis
+          {adminUnreadFeedbackCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-primary text-black text-[10px] font-bold">
+              {adminUnreadFeedbackCount > 99 ? '99+' : adminUnreadFeedbackCount}
+            </span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab('system')}
@@ -760,7 +842,23 @@ export function AdminScreen() {
         </div>
       )}
 
-      {activeTab === 'monitoring' && activeSubTab === 'moderation' && (
+      {activeTab === 'monitoring' && activeSubTab === 'moderation' && (() => {
+        const TWO_MIN_MS = 2 * 60 * 1000;
+        const filteredTrips = trips == null ? [] : (() => {
+          if (moderationFilter === 'all') return [...trips];
+          if (moderationFilter === 'many_passages') return trips.filter(t => t.crossingsCount > 10);
+          if (moderationFilter === 'multiple_submissions') {
+            return trips.filter(trip =>
+              trips!.some(other =>
+                other.userId === trip.userId &&
+                other.id !== trip.id &&
+                Math.abs((other.date ?? 0) - (trip.date ?? 0)) <= TWO_MIN_MS
+              )
+            );
+          }
+          return [...trips];
+        })();
+        return (
         <div className="bg-surface border border-white/5 rounded-3xl p-6">
           <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary" />
@@ -770,8 +868,41 @@ export function AdminScreen() {
             Les 100 derniers trajets. Surveillez les anomalies.
           </p>
 
+          <div className="flex flex-wrap justify-center gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => setModerationFilter('all')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                moderationFilter === 'all' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              Tous
+            </button>
+            <button
+              type="button"
+              onClick={() => setModerationFilter('many_passages')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                moderationFilter === 'many_passages' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              &gt;10 passages
+            </button>
+            <button
+              type="button"
+              onClick={() => setModerationFilter('multiple_submissions')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                moderationFilter === 'multiple_submissions' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              Soum. moins 2min
+            </button>
+          </div>
+
           <div className="space-y-2">
-            {trips?.map(trip => {
+            {filteredTrips.map(trip => {
               const user = users?.find(u => u.id === trip.userId);
               const isSuspicious = trip.distanceKm > 100 || trip.crossingsCount > 20;
 
@@ -808,14 +939,15 @@ export function AdminScreen() {
               );
             })}
             
-            {trips?.length === 0 && (
+            {filteredTrips.length === 0 && (
               <div className="text-center text-white/50 py-8">
                 Aucun trajet récent.
               </div>
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {activeTab === 'users' && activeSubTab === 'resets' && (
         <div className="bg-surface border border-white/5 rounded-3xl p-6 mb-6">
@@ -902,8 +1034,91 @@ export function AdminScreen() {
               <Loader2 className="w-8 h-8 animate-spin" />
             </div>
           ) : (
-          feedback?.map((item) => (
-            <div key={item.id} className="bg-surface border border-white/5 rounded-3xl p-6">
+          <>
+          <div className="flex flex-wrap justify-center gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => setFeedbackFilter('new')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                feedbackFilter === 'new' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              Nouveau
+            </button>
+            <button
+              type="button"
+              onClick={() => setFeedbackFilter('in_progress')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                feedbackFilter === 'in_progress' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              En cours
+            </button>
+            <button
+              type="button"
+              onClick={() => setFeedbackFilter('pending')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                feedbackFilter === 'pending' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              En attente
+            </button>
+            <button
+              type="button"
+              onClick={() => setFeedbackFilter('resolved')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                feedbackFilter === 'resolved' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              Résolu
+            </button>
+            <button
+              type="button"
+              onClick={() => setFeedbackFilter('rejected')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                feedbackFilter === 'rejected' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              Rejeté
+            </button>
+            <button
+              type="button"
+              onClick={() => setFeedbackFilter('all')}
+              className={clsx(
+                "shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all whitespace-nowrap",
+                feedbackFilter === 'all' ? "bg-primary/20 border-primary text-primary" : "bg-white/5 border-white/5 text-white/40 hover:text-white/60"
+              )}
+            >
+              Tous
+            </button>
+          </div>
+          {(() => {
+            const filteredFeedback = (feedback ?? []).filter(item => {
+              if (feedbackFilter === 'all') return true;
+              if (feedbackFilter === 'new') return item.status === 'new';
+              if (feedbackFilter === 'pending') return item.status === 'pending';
+              if (feedbackFilter === 'in_progress') return item.status === 'in_progress';
+              if (feedbackFilter === 'resolved') return item.status === 'resolved';
+              if (feedbackFilter === 'rejected') return item.status === 'rejected';
+              return true;
+            });
+            return (
+            <>
+            {filteredFeedback.map((item) => (
+            <div
+              key={item.id}
+              className={clsx(
+                "rounded-3xl px-6 pt-6 pb-4 border",
+                adminUnreadItemIds.has(item.id!)
+                  ? "bg-primary/10 border-primary/40 ring-2 ring-primary/30"
+                  : "bg-surface border-white/5"
+              )}
+            >
               <div 
                 className="flex items-start justify-between mb-3 cursor-pointer"
                 onClick={() => setExpandedId(expandedId === item.id ? null : item.id!)}
@@ -921,11 +1136,13 @@ export function AdminScreen() {
                 </div>
                 <div className={clsx(
                   "flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full border",
+                  item.status === 'new' && "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
                   item.status === 'pending' && "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
                   item.status === 'in_progress' && "bg-blue-500/10 text-blue-500 border-blue-500/20",
                   item.status === 'resolved' && "bg-green-500/10 text-green-500 border-green-500/20",
                   item.status === 'rejected' && "bg-red-500/10 text-red-500 border-red-500/20",
                 )}>
+                  {item.status === 'new' && 'Nouveau'}
                   {item.status === 'pending' && 'En attente'}
                   {item.status === 'in_progress' && 'En cours'}
                   {item.status === 'resolved' && 'Résolu'}
@@ -954,61 +1171,46 @@ export function AdminScreen() {
                 </div>
               )}
 
-              {/* Reply Input */}
-              {expandedId === item.id && (
-                <div className="mt-4 pt-4 border-t border-white/5 mb-4">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={replyText[item.id!] || ''}
-                      onChange={(e) => setReplyText(prev => ({ ...prev, [item.id!]: e.target.value }))}
-                      placeholder="Répondre..."
-                      className="flex-1 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          if (item.id) handleReply(item.id);
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => item.id && handleReply(item.id)}
-                      disabled={!replyText[item.id!]?.trim()}
-                      className="p-2 bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Expand/Collapse Hint */}
-              {(!expandedId || expandedId !== item.id) && (
-                <div 
-                  className="mt-2 mb-4 text-center"
-                  onClick={() => setExpandedId(item.id!)}
-                >
-                  <button className="text-[10px] text-white/30 uppercase tracking-wider hover:text-white/50 flex items-center justify-center gap-1 w-full">
-                    <MessageCircle className="w-3 h-3" />
-                    {item.replies?.length ? `${item.replies.length} réponse(s)` : 'Répondre'}
+              {/* Reply Input - always visible */}
+              <div className="mt-4 pt-4 border-t border-white/5 mb-4">
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={replyText[item.id!] || ''}
+                    onChange={(e) => setReplyText(prev => ({ ...prev, [item.id!]: e.target.value }))}
+                    placeholder="Répondre..."
+                    className="flex-1 min-w-0 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (item.id) handleReply(item.id, item.status);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => item.id && handleReply(item.id, item.status)}
+                    disabled={!replyText[item.id!]?.trim()}
+                    className="w-10 h-10 flex-shrink-0 flex items-center justify-center bg-white/10 rounded-lg hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
                   </button>
                 </div>
-              )}
+              </div>
 
-              <div className="flex flex-wrap gap-2 pt-4 border-t border-white/5">
-                <button 
-                  onClick={() => item.id && handleUpdateStatus(item.id, 'pending')}
-                  className={clsx("w-12 h-12 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors active:scale-95", item.status === 'pending' ? "text-yellow-500 bg-yellow-500/10" : "text-white/30")}
-                  title="En attente"
-                >
-                  <Clock className="w-6 h-6" />
-                </button>
+              <div className="flex flex-wrap gap-2 justify-center pt-2 pb-2 border-t border-white/5">
                 <button 
                   onClick={() => item.id && handleUpdateStatus(item.id, 'in_progress')}
                   className={clsx("w-12 h-12 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors active:scale-95", item.status === 'in_progress' ? "text-blue-500 bg-blue-500/10" : "text-white/30")}
                   title="En cours"
                 >
                   <Loader2 className="w-6 h-6" />
+                </button>
+                <button 
+                  onClick={() => item.id && handleUpdateStatus(item.id, 'pending')}
+                  className={clsx("w-12 h-12 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors active:scale-95", item.status === 'pending' ? "text-yellow-500 bg-yellow-500/10" : "text-white/30")}
+                  title="En attente"
+                >
+                  <Clock className="w-6 h-6" />
                 </button>
                 <button 
                   onClick={() => item.id && handleUpdateStatus(item.id, 'resolved')}
@@ -1026,13 +1228,17 @@ export function AdminScreen() {
                 </button>
               </div>
             </div>
-          )))}
-
-          {!loadingFeedback && feedback?.length === 0 && (
+          ))}
+          {filteredFeedback.length === 0 && (
             <div className="text-center text-white/50 py-8 bg-surface border border-white/5 rounded-3xl">
               Aucun retour pour le moment.
             </div>
           )}
+            </>
+            );
+          })()}
+          </>
+        )}
         </div>
       )}
 
